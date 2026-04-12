@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 210 40% 98%;
+  --foreground: 220 38% 14%;
+  --card: 0 0% 100%;
+  --card-foreground: 220 38% 14%;
+  --primary: 215 91% 44%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 212 53% 95%;
+  --secondary-foreground: 220 35% 20%;
+  --muted: 213 34% 94%;
+  --muted-foreground: 220 16% 40%;
+  --accent: 39 90% 92%;
+  --accent-foreground: 24 70% 28%;
+  --destructive: 0 80% 57%;
+  --destructive-foreground: 210 40% 98%;
+  --success: 158 64% 32%;
+  --success-foreground: 159 67% 95%;
+  --border: 214 31% 88%;
+  --input: 214 31% 88%;
+  --ring: 215 91% 44%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(90, 173, 255, 0.22), transparent 28%),
+    radial-gradient(circle at 80% 20%, rgba(255, 220, 150, 0.28), transparent 25%),
+    linear-gradient(180deg, #f9fbff 0%, #f2f6ff 55%, #eef4fb 100%);
+  color: hsl(var(--foreground));
+}
+
+::selection {
+  background: rgba(31, 110, 255, 0.16);
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(18px);
+}
+
+.text-balance {
+  text-wrap: balance;
+}
+
+.dotted-grid {
+  background-image:
+    radial-gradient(circle at 1px 1px, rgba(31, 63, 120, 0.12) 1px, transparent 0);
+  background-size: 26px 26px;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: rgba(62, 94, 145, 0.24);
+  border-radius: 999px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+}

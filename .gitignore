@@ -1,0 +1,10 @@
+.next
+node_modules
+data/local/sessions/*.json
+data/local/indexes/*.json
+data/local/sources/*
+!.gitkeep
+.env
+.env.local
+.env.*.local
+npm-debug.log*
