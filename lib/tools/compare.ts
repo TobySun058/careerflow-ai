@@ -1,4 +1,5 @@
 import type { CandidateProfile, JobProfile, MatchReport } from "@/lib/schemas";
+import { tokenize } from "@/lib/utils";
 
 function normalize(items: string[]) {
   return Array.from(
@@ -10,6 +11,24 @@ function normalize(items: string[]) {
   );
 }
 
+function overlapScore(left: string, right: string) {
+  const leftTokens = tokenize(left);
+  const rightTokens = new Set(tokenize(right));
+
+  if (!leftTokens.length || !rightTokens.size) {
+    return 0;
+  }
+
+  let matches = 0;
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) {
+      matches += 1;
+    }
+  }
+
+  return matches / leftTokens.length;
+}
+
 export function compareCandidateToJob(
   candidate: CandidateProfile,
   job: JobProfile
@@ -17,6 +36,11 @@ export function compareCandidateToJob(
   const candidateSignals = normalize([
     ...candidate.skills,
     ...candidate.domains,
+    ...candidate.education.flatMap((item) => [
+      item.school,
+      item.degree ?? "",
+      ...item.highlights
+    ]),
     ...candidate.experience.flatMap((item) => [
       item.title,
       item.company ?? "",
@@ -34,8 +58,22 @@ export function compareCandidateToJob(
   const keywords = normalize(job.keywords);
   const responsibilities = normalize(job.responsibilities);
 
-  const hit = (signal: string) =>
-    candidateSignals.some((candidateSignal) => candidateSignal.includes(signal));
+  const signalScore = (signal: string) =>
+    candidateSignals.reduce((bestScore, candidateSignal) => {
+      if (candidateSignal.includes(signal)) {
+        return 1;
+      }
+
+      return Math.max(bestScore, overlapScore(signal, candidateSignal));
+    }, 0);
+  const hit = (signal: string) => {
+    const score = signalScore(signal);
+    if (signal.split(" ").length <= 3) {
+      return score >= 0.5;
+    }
+
+    return score >= 0.2;
+  };
 
   const requiredHits = required.filter(hit);
   const preferredHits = preferred.filter(hit);

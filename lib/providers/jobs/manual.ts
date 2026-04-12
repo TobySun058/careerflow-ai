@@ -19,6 +19,8 @@ export class ManualJobDiscoveryProvider implements JobDiscoveryProvider {
         summary: demoData.jobDescription.slice(0, 240),
         url: demoData.jobUrl,
         keywords: ["TypeScript", "Next.js", "RAG", "Product", "AI"],
+        provider: "manual",
+        selected: false,
         sourceRefs: []
       },
       {
@@ -30,6 +32,8 @@ export class ManualJobDiscoveryProvider implements JobDiscoveryProvider {
           "Build grounded job-search and resume-tailoring workflows for student users.",
         url: "https://example.com/jobs/career-platform-engineer-intern",
         keywords: ["React", "LLMs", "Grounding", "Analytics", ...keywords.slice(0, 2)],
+        provider: "manual",
+        selected: false,
         sourceRefs: []
       },
       {
@@ -41,6 +45,8 @@ export class ManualJobDiscoveryProvider implements JobDiscoveryProvider {
           "Prototype product experiences that combine retrieval, workflow orchestration, and strong UX.",
         url: "https://example.com/jobs/ai-workflow-product-intern",
         keywords: ["Next.js", "Product", "Evaluation", ...keywords.slice(0, 2)],
+        provider: "manual",
+        selected: false,
         sourceRefs: []
       }
     ];

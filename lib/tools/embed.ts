@@ -1,19 +1,21 @@
-import { getEnv, hasGeminiConfig } from "@/lib/config";
+import { getEnv, hasModelConfig } from "@/lib/config";
 import type { IndexedChunk } from "@/lib/schemas";
 
 async function embedText(text: string) {
   const env = getEnv();
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${env.geminiEmbedModel}:embedContent?key=${env.geminiApiKey}`,
+    `${env.featherlessBaseUrl}/embeddings`,
     {
       method: "POST",
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${env.featherlessApiKey}`,
+        "HTTP-Referer": env.appUrl,
+        "X-Title": "CareerFlow AI"
       },
       body: JSON.stringify({
-        content: {
-          parts: [{ text }]
-        }
+        model: env.featherlessEmbedModel,
+        input: text
       })
     }
   );
@@ -23,15 +25,15 @@ async function embedText(text: string) {
   }
 
   const payload = (await response.json()) as {
-    embedding?: { values?: number[] };
+    data?: Array<{ embedding?: number[] }>;
   };
 
-  return payload.embedding?.values ?? [];
+  return payload.data?.[0]?.embedding ?? [];
 }
 
 export async function embedChunks(chunks: IndexedChunk[]) {
   const env = getEnv();
-  if (!env.enableEmbeddings || !hasGeminiConfig()) {
+  if (!env.enableEmbeddings || !hasModelConfig() || !env.featherlessEmbedModel) {
     return chunks;
   }
 
@@ -51,7 +53,7 @@ export async function embedChunks(chunks: IndexedChunk[]) {
 
 export async function embedQuery(query: string) {
   const env = getEnv();
-  if (!env.enableEmbeddings || !hasGeminiConfig()) {
+  if (!env.enableEmbeddings || !hasModelConfig() || !env.featherlessEmbedModel) {
     return null;
   }
 

@@ -21,6 +21,10 @@ export class FirebaseStorageAdapter implements StorageAdapter {
     return notConfigured();
   }
 
+  async deleteSession(_id: string): Promise<void> {
+    return notConfigured();
+  }
+
   async saveSourceDocuments(
     _sessionId: string,
     _docs: SourceDocument[]

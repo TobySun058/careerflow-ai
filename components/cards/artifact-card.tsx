@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 
 import type { DraftArtifact } from "@/lib/schemas";
 
-import { SourceChips } from "@/components/shared/source-chips";
+import { EvidenceChips } from "@/components/shared/evidence-chips";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
@@ -31,7 +31,7 @@ export function ArtifactCard({
         <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
           <div className="space-y-2">
             <CardTitle>{artifact.title}</CardTitle>
-            <SourceChips refs={artifact.sourceRefs} />
+            <EvidenceChips refs={artifact.sourceRefs} />
           </div>
           <div className="flex gap-2">
             <Button

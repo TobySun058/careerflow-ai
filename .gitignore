@@ -8,3 +8,6 @@ data/local/sources/*
 .env.local
 .env.*.local
 npm-debug.log*
+__pycache__/
+*.pyc
+crewai_bridge/.venv/

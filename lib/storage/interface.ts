@@ -4,6 +4,7 @@ export interface StorageAdapter {
   saveSession(session: SessionRecord): Promise<void>;
   getSession(id: string): Promise<SessionRecord | null>;
   listSessions(): Promise<SessionRecord[]>;
+  deleteSession(id: string): Promise<void>;
   saveSourceDocuments(sessionId: string, docs: SourceDocument[]): Promise<void>;
   getSourceDocuments(sessionId: string): Promise<SourceDocument[]>;
   saveChunkIndex(sessionId: string, chunks: IndexedChunk[]): Promise<void>;

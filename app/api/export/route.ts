@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 
 import { getStorage } from "@/lib/storage";
-import { exportArtifacts } from "@/lib/tools/export";
+import { exportArtifactsAsync } from "@/lib/tools/export";
 
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as {
       sessionId?: string;
-      format?: "json" | "markdown";
+      format?: "json" | "markdown" | "pdf";
     };
 
     if (!body.sessionId) {
@@ -20,7 +20,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Session not found." }, { status: 404 });
     }
 
-    const artifact = exportArtifacts(session, body.format ?? "markdown");
+    const artifact = await exportArtifactsAsync(session, body.format ?? "markdown");
     return NextResponse.json(artifact);
   } catch (error) {
     return NextResponse.json(

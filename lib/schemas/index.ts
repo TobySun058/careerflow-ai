@@ -3,8 +3,13 @@ import { z } from "zod";
 export const sourceKindSchema = z.enum(["truth", "opportunity"]);
 export type SourceKind = z.infer<typeof sourceKindSchema>;
 
-export const sourceSubtypeSchema = z.enum([
+export const sourceTypeSchema = z.enum([
   "resume",
+  "job_description",
+  "pasted_text",
+  "url",
+  "notes",
+  "uploaded_document",
   "supporting_doc",
   "saved_bullet",
   "interview_story",
@@ -14,6 +19,8 @@ export const sourceSubtypeSchema = z.enum([
   "company_page",
   "job_search"
 ]);
+export const sourceSubtypeSchema = sourceTypeSchema;
+export type SourceType = z.infer<typeof sourceTypeSchema>;
 export type SourceSubtype = z.infer<typeof sourceSubtypeSchema>;
 
 export const evidenceRefSchema = z.object({
@@ -44,16 +51,23 @@ export const sourceDocumentSchema = z.object({
   id: z.string(),
   title: z.string(),
   kind: sourceKindSchema,
-  subtype: sourceSubtypeSchema,
+  type: sourceTypeSchema,
+  subtype: sourceSubtypeSchema.optional(),
   content: z.string(),
   preview: z.string(),
   createdAt: z.string(),
+  active: z.boolean().default(false),
   metadata: z
     .object({
       filename: z.string().optional(),
       url: z.string().optional(),
       mimeType: z.string().optional(),
-      chunkCount: z.number().optional()
+      chunkCount: z.number().optional(),
+      label: z.string().optional(),
+      provider: z.string().optional(),
+      jobId: z.string().optional(),
+      company: z.string().optional(),
+      location: z.string().optional()
     })
     .default({}),
   chunkIds: z.array(z.string()).default([])
@@ -131,6 +145,13 @@ export const claimMapEntrySchema = z.object({
 export type ClaimMapEntry = z.infer<typeof claimMapEntrySchema>;
 
 export const artifactTypeSchema = z.enum([
+  "parsed_resume_summary",
+  "saved_job_list",
+  "match_report",
+  "optimized_resume",
+  "resume_edit_guide",
+  "email_draft",
+  "connection_message",
   "match",
   "resume_rewrite",
   "outreach",
@@ -160,45 +181,21 @@ export const workflowTraceStepSchema = z.object({
   agent: z.string(),
   status: z.enum(["queued", "running", "completed", "skipped", "failed"]),
   summary: z.string(),
+  tools: z.array(z.string()).default([]),
   startedAt: z.string(),
   finishedAt: z.string().optional(),
   artifactIds: z.array(z.string()).default([])
 });
 export type WorkflowTraceStep = z.infer<typeof workflowTraceStepSchema>;
 
-export const sessionRecordSchema = z.object({
-  id: z.string(),
-  createdAt: z.string(),
-  updatedAt: z.string(),
-  candidateProfile: candidateProfileSchema.nullable(),
-  jobProfile: jobProfileSchema.nullable(),
-  matchReport: matchReportSchema.nullable(),
-  artifacts: z.array(draftArtifactSchema).default([]),
-  plan: draftArtifactSchema.nullable().default(null),
-  workflowTrace: z.array(workflowTraceStepSchema).default([]),
-  sourceManifest: z.array(sourceDocumentSchema).default([]),
-  notes: z.array(z.string()).default([])
-});
-export type SessionRecord = z.infer<typeof sessionRecordSchema>;
-
-export const sourceManifestResponseSchema = z.object({
-  sessionId: z.string(),
-  sourceManifest: z.array(sourceDocumentSchema)
-});
-export type SourceManifestResponse = z.infer<typeof sourceManifestResponseSchema>;
-
-export const workflowBundleSchema = z.object({
-  session: sessionRecordSchema,
-  artifacts: z.array(draftArtifactSchema),
-  match: matchReportSchema.nullable(),
-  workflowTrace: z.array(workflowTraceStepSchema)
-});
-export type WorkflowBundle = z.infer<typeof workflowBundleSchema>;
-
 export const chatMessageSchema = z.object({
-  role: z.enum(["user", "assistant"]),
+  id: z.string(),
+  role: z.enum(["user", "assistant", "system"]),
   content: z.string(),
-  createdAt: z.string()
+  createdAt: z.string(),
+  explicitIntent: z.string().optional(),
+  sourceRefs: z.array(evidenceRefSchema).default([]),
+  artifactIds: z.array(z.string()).default([])
 });
 export type ChatMessage = z.infer<typeof chatMessageSchema>;
 
@@ -210,6 +207,70 @@ export const jobSearchResultSchema = z.object({
   summary: z.string(),
   url: z.string().optional(),
   keywords: z.array(z.string()).default([]),
+  provider: z.string().optional(),
+  savedSourceId: z.string().optional(),
+  selected: z.boolean().default(false),
   sourceRefs: z.array(evidenceRefSchema).default([])
 });
 export type JobSearchResult = z.infer<typeof jobSearchResultSchema>;
+
+export const sessionRecordSchema = z.object({
+  id: z.string(),
+  title: z.string().default("CareerFlow session"),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  activeResumeSourceId: z.string().nullable().default(null),
+  savedOpportunitySourceIds: z.array(z.string()).default([]),
+  selectedOpportunitySourceId: z.string().nullable().default(null),
+  parsedResumeProfile: candidateProfileSchema.nullable().default(null),
+  selectedOpportunityProfile: jobProfileSchema.nullable().default(null),
+  savedJobSearchResults: z.array(jobSearchResultSchema).default([]),
+  candidateProfile: candidateProfileSchema.nullable(),
+  jobProfile: jobProfileSchema.nullable(),
+  jobProfiles: z.array(jobProfileSchema).default([]),
+  matchReport: matchReportSchema.nullable(),
+  matchReports: z.array(matchReportSchema).default([]),
+  artifacts: z.array(draftArtifactSchema).default([]),
+  plan: draftArtifactSchema.nullable().default(null),
+  workflowTrace: z.array(workflowTraceStepSchema).default([]),
+  sources: z.array(sourceDocumentSchema).default([]),
+  sourceManifest: z.array(sourceDocumentSchema).default([]),
+  chatHistory: z.array(
+    z.object({
+      id: z.string(),
+      role: z.enum(["user", "assistant", "system"]),
+      content: z.string(),
+      createdAt: z.string(),
+      explicitIntent: z.string().optional(),
+      sourceRefs: z.array(evidenceRefSchema).default([]),
+      artifactIds: z.array(z.string()).default([])
+    })
+  ).default([]),
+  jobSearchResults: z.array(jobSearchResultSchema).default([]),
+  notes: z.array(z.string()).default([])
+});
+export type SessionRecord = z.infer<typeof sessionRecordSchema>;
+
+export const sourceManifestResponseSchema = z.object({
+  sessionId: z.string(),
+  sourceManifest: z.array(sourceDocumentSchema),
+  sources: z.array(sourceDocumentSchema).default([])
+});
+export type SourceManifestResponse = z.infer<typeof sourceManifestResponseSchema>;
+
+export const workflowBundleSchema = z.object({
+  session: sessionRecordSchema,
+  artifacts: z.array(draftArtifactSchema),
+  match: matchReportSchema.nullable(),
+  workflowTrace: z.array(workflowTraceStepSchema)
+});
+export type WorkflowBundle = z.infer<typeof workflowBundleSchema>;
+
+export const chatResponseSchema = z.object({
+  session: sessionRecordSchema,
+  assistantMessage: chatMessageSchema,
+  artifacts: z.array(draftArtifactSchema).default([]),
+  workflowTrace: z.array(workflowTraceStepSchema).default([]),
+  sourceRefs: z.array(evidenceRefSchema).default([])
+});
+export type ChatResponse = z.infer<typeof chatResponseSchema>;

@@ -5,6 +5,85 @@ import {
 } from "@/lib/schemas";
 import { generateJson } from "@/lib/tools/model";
 
+function coerceString(value: unknown) {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+
+  if (typeof value === "number") {
+    return String(value);
+  }
+
+  return "";
+}
+
+function pickFirstString(...values: unknown[]) {
+  for (const value of values) {
+    const normalized = coerceString(value);
+    if (normalized) {
+      return normalized;
+    }
+  }
+
+  return "";
+}
+
+function coerceStringArray(value: unknown) {
+  if (!Array.isArray(value)) {
+    const single = coerceString(value);
+    return single ? [single] : [];
+  }
+
+  return Array.from(
+    new Set(
+      value
+        .map((item) => coerceString(item))
+        .filter(Boolean)
+    )
+  );
+}
+
+function buildSourceRefs(chunks: IndexedChunk[] = []) {
+  return chunks.slice(0, 6).map((chunk) => ({
+    sourceId: chunk.sourceId,
+    chunkId: chunk.id,
+    kind: chunk.kind,
+    title: chunk.metadata.sourceTitle ?? "Job description",
+    excerpt: chunk.text.slice(0, 160)
+  }));
+}
+
+function normalizeJobProfile(raw: unknown, fallback: JobProfile, chunks: IndexedChunk[] = []) {
+  const candidate =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const parsed = jobProfileSchema.safeParse({
+    title: pickFirstString(candidate.title, candidate.role, candidate.position, fallback.title) || "Role",
+    company:
+      pickFirstString(candidate.company, candidate.employer, candidate.organization, fallback.company) ||
+      "Unknown Company",
+    summary: pickFirstString(candidate.summary, fallback.summary),
+    requiredSkills:
+      coerceStringArray(candidate.requiredSkills).length > 0
+        ? coerceStringArray(candidate.requiredSkills)
+        : fallback.requiredSkills,
+    preferredSkills:
+      coerceStringArray(candidate.preferredSkills).length > 0
+        ? coerceStringArray(candidate.preferredSkills)
+        : fallback.preferredSkills,
+    responsibilities:
+      coerceStringArray(candidate.responsibilities).length > 0
+        ? coerceStringArray(candidate.responsibilities)
+        : fallback.responsibilities,
+    keywords:
+      coerceStringArray(candidate.keywords).length > 0
+        ? coerceStringArray(candidate.keywords)
+        : fallback.keywords,
+    sourceRefs: buildSourceRefs(chunks)
+  });
+
+  return parsed.success ? parsed.data : fallback;
+}
+
 type ParseJobInput = {
   text: string;
   chunks?: IndexedChunk[];
@@ -30,13 +109,7 @@ function fallbackJobParse(text: string, chunks: IndexedChunk[] = []): JobProfile
     )
   );
 
-  const refs = chunks.slice(0, 6).map((chunk) => ({
-    sourceId: chunk.sourceId,
-    chunkId: chunk.id,
-    kind: chunk.kind,
-    title: chunk.metadata.sourceTitle ?? "Job description",
-    excerpt: chunk.text.slice(0, 160)
-  }));
+  const refs = buildSourceRefs(chunks);
 
   return jobProfileSchema.parse({
     title,
@@ -56,6 +129,7 @@ export async function parseJobDescription({
   text,
   chunks = []
 }: ParseJobInput): Promise<{ jobProfile: JobProfile }> {
+  const fallbackProfile = fallbackJobParse(text, chunks);
   const prompt = [
     "You are RoleResearchAgent for CareerFlow AI.",
     "Extract a grounded JobProfile from the text below.",
@@ -67,18 +141,8 @@ export async function parseJobDescription({
     text
   ].join("\n");
 
-  const result = await generateJson(prompt, () => fallbackJobParse(text, chunks));
-  const jobProfile = jobProfileSchema.parse({
-    ...result.data,
-    sourceRefs:
-      chunks.slice(0, 6).map((chunk) => ({
-        sourceId: chunk.sourceId,
-        chunkId: chunk.id,
-        kind: chunk.kind,
-        title: chunk.metadata.sourceTitle ?? "Job description",
-        excerpt: chunk.text.slice(0, 160)
-      })) ?? []
-  });
+  const result = await generateJson(prompt, () => fallbackProfile);
+  const jobProfile = normalizeJobProfile(result.data, fallbackProfile, chunks);
 
   return { jobProfile };
 }

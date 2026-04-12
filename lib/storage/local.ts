@@ -1,4 +1,4 @@
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { getEnv } from "@/lib/config";
@@ -10,6 +10,7 @@ import {
   type SessionRecord,
   type SourceDocument
 } from "@/lib/schemas";
+import { normalizeSessionRecord } from "@/lib/tools/session-state";
 
 import type { StorageAdapter } from "./interface";
 
@@ -51,13 +52,18 @@ async function readJson<T>(filePath: string): Promise<T | null> {
 export class LocalStorageAdapter implements StorageAdapter {
   async saveSession(session: SessionRecord) {
     await ensureDirs();
-    await writeFile(sessionPath(session.id), JSON.stringify(session, null, 2), "utf8");
+    const normalized = normalizeSessionRecord(session);
+    await writeFile(
+      sessionPath(session.id),
+      JSON.stringify(normalized, null, 2),
+      "utf8"
+    );
   }
 
   async getSession(id: string) {
     await ensureDirs();
     const raw = await readJson<SessionRecord>(sessionPath(id));
-    return raw ? sessionRecordSchema.parse(raw) : null;
+    return raw ? sessionRecordSchema.parse(normalizeSessionRecord(raw)) : null;
   }
 
   async listSessions() {
@@ -70,7 +76,9 @@ export class LocalStorageAdapter implements StorageAdapter {
           const raw = await readJson<SessionRecord>(
             path.join(resolveRoot(), "sessions", file)
           );
-          return raw ? sessionRecordSchema.parse(raw) : null;
+          return raw
+            ? sessionRecordSchema.parse(normalizeSessionRecord(raw))
+            : null;
         })
     );
 
@@ -79,15 +87,43 @@ export class LocalStorageAdapter implements StorageAdapter {
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
+  async deleteSession(id: string) {
+    await ensureDirs();
+    await Promise.all([
+      rm(sessionPath(id), { force: true }),
+      rm(sourcesPath(id), { force: true }),
+      rm(indexPath(id), { force: true })
+    ]);
+  }
+
   async saveSourceDocuments(sessionId: string, docs: SourceDocument[]) {
     await ensureDirs();
-    await writeFile(sourcesPath(sessionId), JSON.stringify(docs, null, 2), "utf8");
+    const normalizedDocs = docs.map((doc) => ({
+      ...doc,
+      type: doc.type ?? doc.subtype ?? "uploaded_document",
+      subtype: doc.subtype ?? doc.type ?? "uploaded_document",
+      active: doc.active ?? false
+    }));
+    await writeFile(
+      sourcesPath(sessionId),
+      JSON.stringify(normalizedDocs, null, 2),
+      "utf8"
+    );
   }
 
   async getSourceDocuments(sessionId: string) {
     await ensureDirs();
     const raw = await readJson<SourceDocument[]>(sourcesPath(sessionId));
-    return raw ? raw.map((doc) => sourceDocumentSchema.parse(doc)) : [];
+    return raw
+      ? raw.map((doc) =>
+          sourceDocumentSchema.parse({
+            ...doc,
+            type: doc.type ?? doc.subtype ?? "uploaded_document",
+            subtype: doc.subtype ?? doc.type ?? "uploaded_document",
+            active: doc.active ?? false
+          })
+        )
+      : [];
   }
 
   async saveChunkIndex(sessionId: string, chunks: IndexedChunk[]) {

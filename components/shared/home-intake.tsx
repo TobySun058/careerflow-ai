@@ -66,11 +66,12 @@ export function HomeIntake() {
               Agentic AI track demo
             </div>
             <h1 className="mt-6 max-w-2xl font-heading text-4xl font-semibold leading-tight text-balance lg:text-6xl">
-              CareerFlow AI turns a messy application sprint into a grounded workflow.
+              CareerFlow AI turns a messy application sprint into a grounded notebook.
             </h1>
             <p className="mt-5 max-w-2xl text-lg text-muted-foreground">
-              Upload a resume, add a role, and let a supervisor coordinate specialized
-              agents for fit analysis, resume rewrites, outreach, interview prep, and a next-step plan.
+              Upload a resume, add a role, and step into a chat-first workspace with
+              visible sources on the left, grounded answers in the center, and agent
+              actions on the right.
             </p>
             <div className="mt-8 grid gap-3 sm:grid-cols-3">
               <Card className="glass-panel p-4">
@@ -100,7 +101,7 @@ export function HomeIntake() {
               <h2 className="font-heading text-2xl font-semibold">Start a session</h2>
             </div>
             <p className="mt-2 text-sm text-muted-foreground">
-              This MVP runs locally-first and only requires a Gemini API key.
+              This MVP runs locally-first and only requires a Featherless API key.
             </p>
 
             <div className="mt-6 space-y-4">

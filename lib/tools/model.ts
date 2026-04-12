@@ -1,52 +1,70 @@
-import { getEnv, hasGeminiConfig } from "@/lib/config";
+import { getEnv, hasModelConfig } from "@/lib/config";
 
 type JsonResult<T> = {
   data: T;
   usedModel: boolean;
+  errorMessage?: string;
 };
 
 function extractResponseText(payload: unknown) {
   const candidate = (payload as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  })?.candidates?.[0];
+    choices?: Array<{
+      message?: {
+        content?: string | Array<{ type?: string; text?: string }>;
+      };
+    }>;
+  })?.choices?.[0];
 
-  const parts = candidate?.content?.parts ?? [];
-  return parts
+  const content = candidate?.message?.content;
+  if (typeof content === "string") {
+    return content.trim();
+  }
+
+  return (content ?? [])
     .map((part) => part.text ?? "")
     .join("")
     .trim();
 }
 
-async function invokeGemini(
+async function invokeFeatherless(
   prompt: string,
   options?: { json?: boolean; temperature?: number }
 ) {
   const env = getEnv();
   const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${env.geminiModel}:generateContent?key=${env.geminiApiKey}`,
+    `${env.featherlessBaseUrl}/chat/completions`,
     {
       method: "POST",
       headers: {
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${env.featherlessApiKey}`,
+        "HTTP-Referer": env.appUrl,
+        "X-Title": "CareerFlow AI"
       },
       body: JSON.stringify({
-        contents: [
+        model: env.featherlessModel,
+        temperature: options?.temperature ?? 0.2,
+        messages: [
+          {
+            role: "system",
+            content: options?.json
+              ? "Return only valid JSON with no markdown fences or extra commentary."
+              : "You are a precise, grounded assistant for an evidence-first career workflow product."
+          },
           {
             role: "user",
-            parts: [{ text: prompt }]
-          }
-        ],
-        generationConfig: {
-          temperature: options?.temperature ?? 0.3,
-          responseMimeType: options?.json ? "application/json" : "text/plain"
-        }
+            content: prompt
+          },
+        ]
       })
     }
   );
 
   if (!response.ok) {
     const errorText = await response.text();
-    throw new Error(`Gemini request failed: ${response.status} ${errorText}`);
+    throw new Error(
+      `Featherless request failed: ${response.status} ${errorText}`
+    );
   }
 
   const json = (await response.json()) as unknown;
@@ -57,33 +75,45 @@ export async function generateJson<T>(
   prompt: string,
   fallback: () => T
 ): Promise<JsonResult<T>> {
-  if (!hasGeminiConfig()) {
-    return { data: fallback(), usedModel: false };
+  if (!hasModelConfig()) {
+    return { data: fallback(), usedModel: false, errorMessage: "Missing FEATHERLESS_API_KEY." };
   }
 
   try {
-    const raw = await invokeGemini(prompt, { json: true });
+    const raw = await invokeFeatherless(prompt, { json: true });
     const parsed = JSON.parse(raw) as T;
     return { data: parsed, usedModel: true };
   } catch (error) {
-    console.warn("Gemini JSON fallback:", error);
-    return { data: fallback(), usedModel: false };
+    console.warn("Featherless JSON fallback:", error);
+    return {
+      data: fallback(),
+      usedModel: false,
+      errorMessage: error instanceof Error ? error.message : "Unknown Featherless JSON error."
+    };
   }
 }
 
 export async function generateText(
   prompt: string,
   fallback: () => string
-): Promise<{ text: string; usedModel: boolean }> {
-  if (!hasGeminiConfig()) {
-    return { text: fallback(), usedModel: false };
+): Promise<{ text: string; usedModel: boolean; errorMessage?: string }> {
+  if (!hasModelConfig()) {
+    return {
+      text: fallback(),
+      usedModel: false,
+      errorMessage: "Missing FEATHERLESS_API_KEY."
+    };
   }
 
   try {
-    const raw = await invokeGemini(prompt, { json: false });
+    const raw = await invokeFeatherless(prompt, { json: false });
     return { text: raw, usedModel: true };
   } catch (error) {
-    console.warn("Gemini text fallback:", error);
-    return { text: fallback(), usedModel: false };
+    console.warn("Featherless text fallback:", error);
+    return {
+      text: fallback(),
+      usedModel: false,
+      errorMessage: error instanceof Error ? error.message : "Unknown Featherless text error."
+    };
   }
 }

@@ -22,6 +22,14 @@ type WriterPayload = {
   atsVersion: string;
 };
 
+type WriterArtifactFocus =
+  | "resume_rewrite"
+  | "outreach"
+  | "linkedin_note"
+  | "cover_letter"
+  | "why_this_role"
+  | "ats_resume";
+
 function fallbackWriterPayload(matchKeywords: string[]) {
   return {
     rewrittenBullets: [
@@ -44,7 +52,11 @@ function fallbackWriterPayload(matchKeywords: string[]) {
 
 export async function runApplicationWriterAgent(
   context: AgentContext,
-  options?: { instruction?: string; mode?: "default" | "ats" }
+  options?: {
+    instruction?: string;
+    mode?: "default" | "ats";
+    focus?: WriterArtifactFocus[];
+  }
 ) {
   const { candidateProfile, jobProfile, matchReport } = requireProfiles(
     context.session.candidateProfile,
@@ -84,7 +96,7 @@ export async function runApplicationWriterAgent(
     ...result.data
   };
 
-  const artifacts: DraftArtifact[] = [
+  const builtArtifacts: DraftArtifact[] = [
     await buildArtifact({
       type: options?.mode === "ats" ? "ats_resume" : "resume_rewrite",
       title: options?.mode === "ats" ? "Final ATS Version" : "Resume Rewrite",
@@ -124,6 +136,25 @@ export async function runApplicationWriterAgent(
       session: context.session
     })
   ];
+
+  const isWriterArtifactFocus = (type: DraftArtifact["type"]): type is WriterArtifactFocus =>
+    [
+      "resume_rewrite",
+      "outreach",
+      "linkedin_note",
+      "cover_letter",
+      "why_this_role",
+      "ats_resume"
+    ].includes(type as WriterArtifactFocus);
+
+  const artifacts =
+    options?.focus?.length
+      ? builtArtifacts.filter(
+          (artifact) =>
+            isWriterArtifactFocus(artifact.type) &&
+            options.focus?.includes(artifact.type)
+        )
+      : builtArtifacts;
 
   context.updateTrace(
     makeTraceStep(

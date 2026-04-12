@@ -20,17 +20,36 @@ export type AgentContext = {
   updateTrace: (step: WorkflowTraceStep) => void;
 };
 
+export function buildAgentContext(
+  session: SessionRecord,
+  chunks: IndexedChunk[]
+): AgentContext {
+  return {
+    session,
+    chunks,
+    updateTrace(step: WorkflowTraceStep) {
+      session.workflowTrace.push({
+        ...step,
+        id: step.id ?? makeId("trace")
+      });
+      session.updatedAt = new Date().toISOString();
+    }
+  };
+}
+
 export function makeTraceStep(
   agent: string,
   summary: string,
   status: WorkflowTraceStep["status"],
-  artifactIds: string[] = []
+  artifactIds: string[] = [],
+  tools: string[] = []
 ): WorkflowTraceStep {
   return {
     id: makeId("trace"),
     agent,
     status,
     summary,
+    tools,
     startedAt: new Date().toISOString(),
     finishedAt: new Date().toISOString(),
     artifactIds

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { runSupervisorFollowUp } from "@/lib/agents/supervisor";
+import { runOrchestratorChat } from "@/lib/agents/orchestrator";
 
 export async function POST(request: Request) {
   try {
@@ -15,7 +15,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const result = await runSupervisorFollowUp(body.sessionId, body.instruction);
+    const result = await runOrchestratorChat({
+      sessionId: body.sessionId,
+      message: body.instruction
+    });
     return NextResponse.json(result);
   } catch (error) {
     return NextResponse.json(
