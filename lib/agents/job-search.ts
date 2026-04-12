@@ -1,11 +1,11 @@
 import type { AgentContext } from "@/lib/agents/shared";
 import { makeTraceStep, upsertArtifact } from "@/lib/agents/shared";
+import demoData from "@/data/sample/demo.json";
 import { JobSpyMcpClient } from "@/lib/mcp/jobspy/client";
 import type { JobSpySearchFilters } from "@/lib/mcp/jobspy/types";
 import type { DraftArtifact, JobSearchResult, SessionRecord } from "@/lib/schemas";
 import { getStorage } from "@/lib/storage";
 import { makeId } from "@/lib/utils";
-import { ManualJobDiscoveryProvider } from "@/lib/providers/jobs/manual";
 import { saveJobResultAsOpportunity } from "@/lib/agents/parse-ingest";
 import { setSavedJobSearchResults } from "@/lib/tools/session-state";
 
@@ -80,6 +80,48 @@ export function deriveSearchQuery(session: SessionRecord, message?: string) {
   return "software engineering internship";
 }
 
+function buildSeededFallbackResults(query: string): JobSearchResult[] {
+  const keywords = query
+    .split(/\s+/)
+    .map((token) => token.toLowerCase())
+    .filter(Boolean);
+
+  return [
+    toJobSearchResult({
+      id: makeId("job"),
+      title: "Applied AI Product Engineering Intern",
+      company: "BrightPath Careers",
+      location: "Remote",
+      summary: demoData.jobDescription.slice(0, 240),
+      url: demoData.jobUrl,
+      keywords: ["TypeScript", "Next.js", "RAG", "Product", "AI"],
+      provider: "manual"
+    }),
+    toJobSearchResult({
+      id: makeId("job"),
+      title: "Career Platform Engineer Intern",
+      company: "LaunchLayer",
+      location: "Chicago, IL",
+      summary:
+        "Build grounded job-search and resume-tailoring workflows for student users.",
+      url: "https://example.com/jobs/career-platform-engineer-intern",
+      keywords: ["React", "LLMs", "Grounding", "Analytics", ...keywords.slice(0, 2)],
+      provider: "manual"
+    }),
+    toJobSearchResult({
+      id: makeId("job"),
+      title: "AI Workflow Product Intern",
+      company: "SignalSpring",
+      location: "Hybrid",
+      summary:
+        "Prototype product experiences that combine retrieval, workflow orchestration, and strong UX.",
+      url: "https://example.com/jobs/ai-workflow-product-intern",
+      keywords: ["Next.js", "Product", "Evaluation", ...keywords.slice(0, 2)],
+      provider: "manual"
+    })
+  ];
+}
+
 export async function searchJobs(
   context: AgentContext,
   input: {
@@ -108,20 +150,7 @@ export async function searchJobs(
   }
 
   if (!results.length) {
-    const manual = new ManualJobDiscoveryProvider();
-    const fallbackResults = await manual.searchJobs(input.query, input.filters);
-    results = fallbackResults.map((item) =>
-      toJobSearchResult({
-        id: item.id,
-        title: item.title,
-        company: item.company,
-        location: item.location,
-        summary: item.summary,
-        url: item.url,
-        keywords: item.keywords,
-        provider: "manual"
-      })
-    );
+    results = buildSeededFallbackResults(input.query);
   }
 
   setSavedJobSearchResults(context.session, results);

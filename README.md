@@ -1,16 +1,22 @@
 # CareerFlow AI
 
-CareerFlow AI is a hackathon-ready, evidence-first, NotebookLM-style career workspace built with Next.js App Router, TypeScript, Tailwind CSS, and shadcn-style UI primitives.
+CareerFlow AI is a local-first, NotebookLM-style career workspace for grounded resume and job-search workflows. The product is built with Next.js App Router, TypeScript, Tailwind CSS, and a small MCP adapter layer for the external tools that actually matter in the current stack.
 
-The interface stays simple:
+The interface is intentionally stable:
 
-- left rail: sources
-- center rail: grounded chat
-- right rail: explicit actions, workflow trace, and latest artifacts
+- left rail: sources and saved sessions
+- center rail: persistent grounded chat
+- right rail: actions, workflow trace, and latest outputs
 
-The backend is now simplified around one orchestrator plus four worker agents, with MCP adapters as the primary integration layer.
+The current backend is intentionally simpler than the earlier hackathon versions:
 
-An optional CrewAI bridge can be enabled for more autonomous intent planning. In that mode, the Next.js backend stays the execution host, while a Python CrewAI sidecar proposes the worker-agent sequence for each chat request.
+- `OrchestratorAgent` is the single entry point for chat and action buttons
+- `ParseIngestAgent` manages source ingestion, parsing, and index rebuilds
+- `JobSearchAgent` handles job search plus selective job saving
+- `MatchOptimizeAgent` generates match reports and section-by-section resume edit guidance
+- `EmailConnectAgent` drafts grounded outreach, connection notes, and cover letters
+
+An optional CrewAI bridge can still be enabled for more autonomous planning, but the Next.js backend remains the execution host and system of record.
 
 ## What it does
 
@@ -19,7 +25,8 @@ An optional CrewAI bridge can be enabled for more autonomous intent planning. In
 - Replace the active resume or remove sources from a session
 - Keep user facts and opportunity facts isolated with dual corpora
 - Search jobs, review multiple results, and selectively save jobs into the opportunity corpus
-- Analyze match, optimize a resume, and draft grounded outreach
+- Analyze match, generate resume edit guidance, and draft grounded outreach
+- Export a PDF resume through Resumake MCP when configured
 - Persist chat history, artifacts, workflow trace, sources, saved jobs, and parsed state per session
 
 ## Stack
@@ -67,6 +74,13 @@ ENABLE_DECODO_MCP=true
 DECODO_API_KEY=your_key_here
 DECODO_MCP_URL=https://your-decodo-mcp-endpoint
 ```
+
+Notes:
+
+- `Resumake MCP` is used for final PDF resume generation/export.
+- `JobSpy MCP` is used for job search.
+- `Decodo MCP` is used for URL extraction and enrichment.
+- Resume parsing and match guidance stay local and grounded even when MCPs are disabled.
 
 5. Start the app
 
@@ -145,7 +159,7 @@ Flow:
 
 - chat or action -> `OrchestratorAgent`
 - orchestrator -> one or more of parse/ingest, job search, match/optimize, email/connect
-- worker agent -> MCP adapter first, local fallback second
+- worker agent -> local grounded logic plus MCP adapter calls where they actually help
 - outputs -> session state, artifacts, workflow trace, grounded chat response
 
 ### MCP adapters
@@ -158,6 +172,8 @@ Flow:
   - preferred for URL extraction and page enrichment
 
 All MCP integration logic is centralized under `lib/mcp/*`. The app backend acts as the orchestration host and falls back gracefully when an MCP is unavailable.
+
+Legacy hackathon-era agents and provider shims are not part of the live notebook flow anymore. The active path is the five-agent stack described above plus the MCP adapters in `lib/mcp/*`.
 
 ### Optional CrewAI planning bridge
 
@@ -239,7 +255,7 @@ Use the "Load demo data" button on the home page for a quick end-to-end demo.
 - The app is still useful when optional adapters are disabled.
 - Featherless powers open-ended grounded generation and local fallback prompts.
 - Job search falls back to seeded manual job results when JobSpy MCP is unavailable.
-- Resume parsing and match guidance use local grounded logic.
-- Resumake MCP is used for final PDF-style resume export when configured.
+- Resume parsing, match analysis, and resume edit guidance use local grounded logic.
+- Resumake MCP is only used where it fits well: final resume rendering/export.
 - URL extraction falls back to direct fetch-and-clean when Decodo MCP is unavailable.
 - The main demo path is: create or load a session, review sources in the left rail, chat in the center, search and save a job, then run match, optimize, or email actions from the right rail.

@@ -440,7 +440,6 @@ function orchestratorToolsForIntent(intent: OrchestratorIntent) {
       return [
         "ensureParsedSessionState",
         "compareCandidateToJob",
-        "ResumeOptimizerProMcp.scoreResumeAgainstJob",
         "retrieveTruthEvidence",
         "retrieveOpportunityEvidence",
         "generateText"

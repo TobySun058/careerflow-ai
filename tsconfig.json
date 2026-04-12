@@ -24,5 +24,18 @@
     }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", "**/*.d.ts", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "lib/agents/interview-prep.ts",
+    "lib/agents/match-optimize.ts",
+    "lib/agents/match.ts",
+    "lib/agents/planner.ts",
+    "lib/agents/resume-evidence.ts",
+    "lib/agents/role-research.ts",
+    "lib/agents/supervisor.ts",
+    "lib/agents/writer.ts",
+    "lib/mcp/dice/**/*.ts",
+    "lib/mcp/resume-optimizer-pro/**/*.ts",
+    "lib/providers/**/*.ts"
+  ]
 }

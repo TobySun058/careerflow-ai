@@ -1,7 +1,6 @@
 import type { AgentContext } from "@/lib/agents/shared";
 import { buildAgentContext, buildArtifact, makeTraceStep, upsertArtifact } from "@/lib/agents/shared";
 import { DecodoMcpClient } from "@/lib/mcp/decodo/client";
-import { ResumeOptimizerProMcpClient } from "@/lib/mcp/resume-optimizer-pro/client";
 import type { JobSearchResult, SessionRecord, SourceDocument } from "@/lib/schemas";
 import { getStorage } from "@/lib/storage";
 import { parseJobDescription } from "@/lib/tools/parse-job";
@@ -147,37 +146,11 @@ async function parseResumeIntoSession(
 
     return selectedTruthIds.has(chunk.sourceId);
   });
-  const resumeOptimizer = new ResumeOptimizerProMcpClient();
-  let profile = null;
-  let parserLabel = "local parser";
-
-  if (resumeOptimizer.isConfigured()) {
-    try {
-      const parsed = await resumeOptimizer.parseResume({
-        text: activeResume.content,
-        title: activeResume.title
-      });
-      if (parsed.candidateProfile) {
-        profile = parsed.candidateProfile;
-        parserLabel = "Resume Optimizer Pro MCP";
-      }
-    } catch (error) {
-      appendNote(
-        context.session,
-        error instanceof Error
-          ? `Resume Optimizer Pro fallback: ${error.message}`
-          : "Resume Optimizer Pro fallback triggered."
-      );
-    }
-  }
-
-  if (!profile) {
-    const local = await parseResume({
-      text: truthSources.map((source) => source.content).join("\n\n"),
-      chunks: truthChunks
-    });
-    profile = local.candidateProfile;
-  }
+  const local = await parseResume({
+    text: truthSources.map((source) => source.content).join("\n\n"),
+    chunks: truthChunks
+  });
+  const profile = local.candidateProfile;
 
   setParsedResumeProfile(context.session, profile);
   context.session.activeResumeSourceId = activeResume.id;
@@ -195,14 +168,10 @@ async function parseResumeIntoSession(
   context.updateTrace(
     makeTraceStep(
       "ParseIngestAgent",
-      `Parsed the active resume using ${parserLabel}.`,
+      "Parsed the active resume using the local grounded parser.",
       "completed",
       [artifact.id],
-      [
-        parserLabel === "Resume Optimizer Pro MCP" ? "ResumeOptimizerProMcp.parseResume" : "parseResume",
-        "rebuildSessionSourceState",
-        "buildArtifact"
-      ]
+      ["parseResume", "rebuildSessionSourceState", "buildArtifact"]
     )
   );
 

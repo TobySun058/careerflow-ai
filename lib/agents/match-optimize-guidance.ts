@@ -1,6 +1,5 @@
 import type { AgentContext } from "@/lib/agents/shared";
 import { buildArtifact, makeTraceStep, upsertArtifact } from "@/lib/agents/shared";
-import { ResumeOptimizerProMcpClient } from "@/lib/mcp/resume-optimizer-pro/client";
 import type {
   CandidateProfile,
   DraftArtifact,
@@ -31,14 +30,9 @@ function buildMatchArtifactContent(input: {
   gaps: string[];
   recommendedEmphasis: string[];
   priorityKeywords: string[];
-  mcpScore?: number;
-  mcpSummary?: string;
-  missingKeywords?: string[];
 }) {
   return [
     `Local grounded score: ${input.localScore}/100`,
-    input.mcpScore !== undefined ? `Resume Optimizer Pro MCP score: ${input.mcpScore}/100` : "",
-    input.mcpSummary ? `MCP summary: ${input.mcpSummary}` : "",
     "",
     "Strengths:",
     ...input.strengths.map((item) => `- ${item}`),
@@ -47,9 +41,7 @@ function buildMatchArtifactContent(input: {
     ...input.gaps.map((item) => `- ${item}`),
     "",
     "Missing keywords:",
-    ...(input.missingKeywords?.length
-      ? input.missingKeywords.map((item) => `- ${item}`)
-      : input.priorityKeywords.slice(0, 6).map((item) => `- ${item}`)),
+    ...input.priorityKeywords.slice(0, 6).map((item) => `- ${item}`),
     "",
     "Recommended emphasis:",
     ...input.recommendedEmphasis.map((item) => `- ${item}`)
@@ -158,9 +150,6 @@ function buildResumeEditGuideFallback(input: {
   candidateProfile: CandidateProfile;
   jobProfile: JobProfile;
   matchReport: MatchReport;
-  mcpScore?: number;
-  mcpSummary?: string;
-  mcpMissingKeywords: string[];
 }) {
   const relevantExperience = rankExperienceEntries(
     input.candidateProfile,
@@ -174,7 +163,7 @@ function buildResumeEditGuideFallback(input: {
   );
   const education = input.candidateProfile.education[0];
   const keywordList = Array.from(
-    new Set([...input.mcpMissingKeywords, ...input.matchReport.priorityKeywords])
+    new Set(input.matchReport.priorityKeywords)
   ).slice(0, 8);
 
   return cleanText(
@@ -184,10 +173,6 @@ function buildResumeEditGuideFallback(input: {
       "Overall positioning:",
       `- Target role: ${input.jobProfile.title} at ${input.jobProfile.company}.`,
       `- Local grounded fit: ${input.matchReport.fitScore}/100.`,
-      input.mcpScore !== undefined
-        ? `- Resume Optimizer Pro MCP score: ${input.mcpScore}/100.`
-        : "",
-      input.mcpSummary ? `- MCP signal: ${input.mcpSummary}` : "",
       ...input.matchReport.recommendedEmphasis
         .slice(0, 3)
         .map((item) => `- ${item}`),
@@ -249,9 +234,6 @@ function buildResumeEditGuidePrompt(input: {
   activeResumeText: string;
   truthEvidence: Awaited<ReturnType<typeof retrieveTruthEvidence>>;
   opportunityEvidence: Awaited<ReturnType<typeof retrieveOpportunityEvidence>>;
-  mcpScore?: number;
-  mcpSummary?: string;
-  mcpMissingKeywords: string[];
   instruction?: string;
 }) {
   const relevantExperience = rankExperienceEntries(
@@ -289,11 +271,6 @@ function buildResumeEditGuidePrompt(input: {
     "- Return plain text only with these sections: Overall positioning, Where to change, Keywords to weave in, Gaps to address honestly, Do not invent.",
     "",
     `Instruction: ${input.instruction ?? "Tell me where to change this resume for the selected job."}`,
-    input.mcpScore !== undefined ? `Resume Optimizer Pro MCP score: ${input.mcpScore}/100` : "",
-    input.mcpSummary ? `Resume Optimizer Pro MCP summary: ${input.mcpSummary}` : "",
-    input.mcpMissingKeywords.length
-      ? `Resume Optimizer Pro MCP missing keywords: ${input.mcpMissingKeywords.join(", ")}`
-      : "",
     "",
     "Current resume text:",
     input.activeResumeText,
@@ -348,32 +325,6 @@ export async function runMatchOptimizeAgent(
   context.session.matchReport = localMatch;
   appendMatchReportSnapshot(context.session, localMatch);
 
-  const resumeOptimizer = new ResumeOptimizerProMcpClient();
-  let mcpScore: number | undefined;
-  let mcpSummary: string | undefined;
-  let mcpMissingKeywords: string[] = [];
-
-  if (resumeOptimizer.isConfigured()) {
-    try {
-      const scored = await resumeOptimizer.scoreResumeAgainstJob({
-        resumeText: activeResume.content,
-        jobText: selectedOpportunity.content,
-        candidateProfile,
-        jobProfile
-      });
-      mcpScore = scored.score;
-      mcpSummary = scored.summary;
-      mcpMissingKeywords = scored.missingKeywords;
-    } catch (error) {
-      context.session.notes = [
-        ...context.session.notes,
-        error instanceof Error
-          ? `Resume Optimizer Pro scoring fallback: ${error.message}`
-          : "Resume Optimizer Pro scoring fallback triggered."
-      ].slice(-6);
-    }
-  }
-
   const matchArtifact = await buildArtifact({
     type: "match_report",
     title: "Match Report",
@@ -382,10 +333,7 @@ export async function runMatchOptimizeAgent(
       strengths: localMatch.strengths,
       gaps: localMatch.gaps,
       recommendedEmphasis: localMatch.recommendedEmphasis,
-      priorityKeywords: localMatch.priorityKeywords,
-      mcpScore,
-      mcpSummary,
-      missingKeywords: mcpMissingKeywords
+      priorityKeywords: localMatch.priorityKeywords
     }),
     editable: false,
     chunks: context.chunks,
@@ -396,9 +344,6 @@ export async function runMatchOptimizeAgent(
   const artifacts: DraftArtifact[] = [matchArtifact];
   const summaryParts = [
     `Your local grounded fit is ${localMatch.fitScore}/100.`,
-    mcpScore !== undefined
-      ? `Resume Optimizer Pro MCP returned ${mcpScore}/100.`
-      : "",
     localMatch.gaps[0] ? `Biggest grounded gap: ${localMatch.gaps[0]}` : ""
   ].filter(Boolean);
 
@@ -424,19 +369,13 @@ export async function runMatchOptimizeAgent(
         activeResumeText: activeResume.content,
         truthEvidence,
         opportunityEvidence,
-        mcpScore,
-        mcpSummary,
-        mcpMissingKeywords,
         instruction: options?.instruction
       }),
       () =>
         buildResumeEditGuideFallback({
           candidateProfile,
           jobProfile,
-          matchReport: localMatch,
-          mcpScore,
-          mcpSummary,
-          mcpMissingKeywords
+          matchReport: localMatch
         })
     );
 
@@ -445,10 +384,7 @@ export async function runMatchOptimizeAgent(
       buildResumeEditGuideFallback({
         candidateProfile,
         jobProfile,
-        matchReport: localMatch,
-        mcpScore,
-        mcpSummary,
-        mcpMissingKeywords
+        matchReport: localMatch
       });
 
     context.session.artifacts = context.session.artifacts.filter(
@@ -465,9 +401,7 @@ export async function runMatchOptimizeAgent(
     upsertArtifact(context.session.artifacts, guidanceArtifact);
     artifacts.push(guidanceArtifact);
     summaryParts.push(
-      mcpScore !== undefined
-        ? "I created a section-by-section resume edit guide using grounded evidence plus Resume Optimizer Pro scoring, instead of rewriting the whole resume."
-        : "I created a section-by-section resume edit guide based on your current resume and the selected role, instead of rewriting the whole resume."
+      "I created a section-by-section resume edit guide based on your current resume and the selected role, instead of rewriting the whole resume."
     );
   }
 
@@ -482,7 +416,6 @@ export async function runMatchOptimizeAgent(
       [
         "ensureParsedSessionState",
         "compareCandidateToJob",
-        "ResumeOptimizerProMcp.scoreResumeAgainstJob",
         ...(mode === "optimize"
           ? ["retrieveTruthEvidence", "retrieveOpportunityEvidence", "generateText"]
           : []),
