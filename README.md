@@ -175,8 +175,6 @@ Primary routes include:
 - `POST /api/chat`
 - `POST /api/jobs/search`
 - `POST /api/jobs/save`
-- `POST /api/match/run`
-- `POST /api/email/run`
 - `POST /api/export`
 - `POST /api/sources/add`
 - `POST /api/sources/replace-resume`

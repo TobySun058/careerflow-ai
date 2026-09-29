@@ -23,7 +23,7 @@ import { buildAgentContext, makeTraceStep } from "@/lib/agents/shared";
 import { requestCrewAiPlan } from "./crewai-bridge";
 import { runEmailConnectAgent } from "./email-connect";
 import { deriveSearchQuery, saveSelectedJobToSession, searchJobs } from "./job-search";
-import { runMatchOptimizeAgent } from "./match-optimize-guidance";
+import { runMatchOptimizeAgent } from "./match-optimize";
 import { ensureParsedSessionState } from "./parse-ingest";
 
 type OrchestratorIntent =

@@ -1,7 +1,13 @@
 import type { AgentContext } from "@/lib/agents/shared";
 import { buildArtifact, makeTraceStep, upsertArtifact } from "@/lib/agents/shared";
-import { ResumeOptimizerProMcpClient } from "@/lib/mcp/resume-optimizer-pro/client";
-import type { DraftArtifact } from "@/lib/schemas";
+import type {
+  CandidateProfile,
+  DraftArtifact,
+  ExperienceItem,
+  JobProfile,
+  MatchReport,
+  ProjectItem
+} from "@/lib/schemas";
 import { compareCandidateToJob } from "@/lib/tools/compare";
 import { generateText } from "@/lib/tools/model";
 import {
@@ -14,6 +20,7 @@ import {
   getSelectedOpportunitySource,
   setActiveResumeSource
 } from "@/lib/tools/session-state";
+import { tokenize, truncate } from "@/lib/utils";
 
 import { ensureParsedSessionState } from "./parse-ingest";
 
@@ -23,14 +30,9 @@ function buildMatchArtifactContent(input: {
   gaps: string[];
   recommendedEmphasis: string[];
   priorityKeywords: string[];
-  mcpScore?: number;
-  mcpSummary?: string;
-  missingKeywords?: string[];
 }) {
   return [
     `Local grounded score: ${input.localScore}/100`,
-    input.mcpScore !== undefined ? `Resume Optimizer Pro MCP score: ${input.mcpScore}/100` : "",
-    input.mcpSummary ? `MCP summary: ${input.mcpSummary}` : "",
     "",
     "Strengths:",
     ...input.strengths.map((item) => `- ${item}`),
@@ -39,9 +41,7 @@ function buildMatchArtifactContent(input: {
     ...input.gaps.map((item) => `- ${item}`),
     "",
     "Missing keywords:",
-    ...(input.missingKeywords?.length
-      ? input.missingKeywords.map((item) => `- ${item}`)
-      : input.priorityKeywords.slice(0, 6).map((item) => `- ${item}`)),
+    ...input.priorityKeywords.slice(0, 6).map((item) => `- ${item}`),
     "",
     "Recommended emphasis:",
     ...input.recommendedEmphasis.map((item) => `- ${item}`)
@@ -50,221 +50,236 @@ function buildMatchArtifactContent(input: {
     .join("\n");
 }
 
-function buildLocalOptimizationFallback(context: AgentContext) {
-  const activeResume = getActiveResumeSource(context.session);
-  if (!activeResume?.content.trim()) {
-    return "No grounded optimized resume is available yet.";
-  }
-
-  const structured = buildStructuredResumeFallback(context);
-  return structured.trim() || activeResume.content.trim();
-}
-
-function countNonEmptyLines(text: string) {
+function cleanText(text: string) {
   return text
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean).length;
-}
-
-function countResumeSections(text: string) {
-  const sectionPatterns = [
-    /\beducation\b/i,
-    /\bexperience\b/i,
-    /\bwork experience\b/i,
-    /\bprojects?\b/i,
-    /\bresearch\b/i,
-    /\bskills?\b/i,
-    /\btechnical skills\b/i
-  ];
-
-  return sectionPatterns.filter((pattern) => pattern.test(text)).length;
-}
-
-function hasResumeMetaFraming(text: string) {
-  const normalized = text.toLowerCase();
-  return [
-    "here's a rewritten version",
-    "here is a rewritten version",
-    "using only the provided evidence",
-    "concise ats-friendly format",
-    "i've only included information"
-  ].some((phrase) => normalized.includes(phrase));
-}
-
-function cleanResumeArtifacts(text: string) {
-  return text
-    .replace(/[鈻■▪•●]/g, "-")
-    .replace(/[鈥–—]/g, "-")
-    .replace(/[脳×]/g, "x")
+    .replace(/[閳烩枲鈻€⑩棌]/g, "-")
+    .replace(/[閳モ€撯€擼]/g, "-")
+    .replace(/[鑴趁梋]/g, "x")
     .replace(/\r/g, "")
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
-function extractHeaderBlock(text: string) {
-  const lines = cleanResumeArtifacts(text)
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean);
-
-  const educationIndex = lines.findIndex((line) => /^EDUCATION$/i.test(line));
-  const headerLines = (educationIndex === -1 ? lines.slice(0, 2) : lines.slice(0, educationIndex))
-    .slice(0, 3)
-    .filter(Boolean);
-
-  return headerLines.join("\n");
-}
-
-function formatExperienceEntry(entry: NonNullable<AgentContext["session"]["parsedResumeProfile"]>["experience"][number]) {
-  const header = [entry.company, entry.title, entry.date].filter(Boolean).join(" | ");
-  return [
-    header || entry.title,
-    ...entry.bullets.map((bullet) => `- ${bullet}`)
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
-
-function buildStructuredResumeFallback(context: AgentContext) {
-  const activeResume = getActiveResumeSource(context.session);
-  const profile = context.session.parsedResumeProfile;
-
-  if (!activeResume?.content.trim()) {
-    return "No grounded optimized resume is available yet.";
+function scoreEntryAgainstKeywords(text: string, keywords: string[]) {
+  const entryTokens = new Set(tokenize(text));
+  if (!entryTokens.size || !keywords.length) {
+    return 0;
   }
 
-  if (!profile) {
-    return cleanResumeArtifacts(activeResume.content);
-  }
+  return keywords.reduce((score, keyword) => {
+    const keywordTokens = tokenize(keyword);
+    if (!keywordTokens.length) {
+      return score;
+    }
 
-  const headerBlock = extractHeaderBlock(activeResume.content);
-  const educationEntries = profile.education.map((item) =>
-    [
-      [item.school, item.degree, item.date].filter(Boolean).join(" | "),
-      ...item.highlights.map((highlight) => `- ${highlight}`)
-    ]
-      .filter(Boolean)
-      .join("\n")
-  );
-  const experienceEntries = profile.experience.map(formatExperienceEntry);
-  const projectEntries = profile.projects.map((project) =>
-    [
-      project.name,
-      ...project.description.map((line) => `- ${line}`),
-      project.technologies.length
-        ? `Technologies: ${project.technologies.join(", ")}`
-        : ""
-    ]
-      .filter(Boolean)
-      .join("\n")
-  );
-  const skillsLine = profile.skills.length
-    ? profile.skills.join(", ")
-    : "";
-
-  return cleanResumeArtifacts(
-    [
-      headerBlock,
-      "EDUCATION",
-      ...educationEntries,
-      experienceEntries.length ? "EXPERIENCE" : "",
-      ...experienceEntries,
-      projectEntries.length ? "PROJECTS" : "",
-      ...projectEntries,
-      skillsLine ? "SKILLS" : "",
-      skillsLine
-    ]
-      .filter(Boolean)
-      .join("\n\n")
-  );
+    const matches = keywordTokens.filter((token) => entryTokens.has(token)).length;
+    return score + matches / keywordTokens.length;
+  }, 0);
 }
 
-function isOverCompressedResume(originalResume: string, candidateResume: string) {
-  const original = originalResume.trim();
-  const candidate = candidateResume.trim();
-
-  if (!original || !candidate) {
-    return true;
-  }
-
-  const originalLineCount = countNonEmptyLines(original);
-  const candidateLineCount = countNonEmptyLines(candidate);
-  const originalCharCount = original.replace(/\s+/g, " ").length;
-  const candidateCharCount = candidate.replace(/\s+/g, " ").length;
-  const originalSectionCount = countResumeSections(original);
-  const candidateSectionCount = countResumeSections(candidate);
-
-  return (
-    hasResumeMetaFraming(candidate) ||
-    candidateLineCount < Math.max(12, Math.floor(originalLineCount * 0.6)) ||
-    candidateCharCount < Math.max(700, Math.floor(originalCharCount * 0.55)) ||
-    (originalSectionCount >= 3 && candidateSectionCount < Math.max(2, originalSectionCount - 1))
-  );
+function experienceHeader(entry: ExperienceItem) {
+  return [entry.company, entry.title, entry.date].filter(Boolean).join(" | ") || entry.title;
 }
 
-function hasExpectedRoleCoverage(
-  profile: AgentContext["session"]["parsedResumeProfile"],
-  candidateResume: string
+function projectHeader(project: ProjectItem) {
+  return project.name;
+}
+
+function rankExperienceEntries(
+  candidateProfile: CandidateProfile,
+  jobProfile: JobProfile,
+  keywords: string[],
+  limit = 3
 ) {
-  if (!profile) {
-    return true;
-  }
+  const targetSignals = [
+    ...jobProfile.requiredSkills,
+    ...jobProfile.preferredSkills,
+    ...jobProfile.keywords,
+    ...jobProfile.responsibilities,
+    ...keywords
+  ].filter(Boolean);
 
-  const normalized = cleanResumeArtifacts(candidateResume).toLowerCase();
-  const signals = profile.experience
-    .flatMap((entry) => [entry.company, entry.title])
-    .filter((value): value is string => Boolean(value))
-    .filter((value, index, list) => list.indexOf(value) === index);
-
-  if (!signals.length) {
-    return true;
-  }
-
-  const matchedCount = signals.filter((signal) =>
-    normalized.includes(signal.toLowerCase())
-  ).length;
-
-  return matchedCount >= Math.max(2, Math.floor(signals.length * 0.5));
+  return candidateProfile.experience
+    .map((entry) => {
+      const entryText = [entry.title, entry.company ?? "", ...entry.bullets].join(" ");
+      const matchedKeywords = targetSignals.filter(
+        (signal) => scoreEntryAgainstKeywords(entryText, [signal]) >= 0.5
+      );
+      return {
+        entry,
+        matchedKeywords,
+        score: scoreEntryAgainstKeywords(entryText, targetSignals)
+      };
+    })
+    .sort((left, right) => right.score - left.score)
+    .slice(0, limit);
 }
 
-function buildStructurePreservingOptimizationPrompt(input: {
-  resumeText: string;
-  candidateProfile: AgentContext["session"]["parsedResumeProfile"];
-  jobProfile: AgentContext["session"]["selectedOpportunityProfile"];
+function rankProjectEntries(
+  candidateProfile: CandidateProfile,
+  jobProfile: JobProfile,
+  keywords: string[],
+  limit = 2
+) {
+  const targetSignals = [
+    ...jobProfile.requiredSkills,
+    ...jobProfile.preferredSkills,
+    ...jobProfile.keywords,
+    ...jobProfile.responsibilities,
+    ...keywords
+  ].filter(Boolean);
+
+  return candidateProfile.projects
+    .map((project) => {
+      const projectText = [project.name, ...project.description, ...project.technologies].join(" ");
+      const matchedKeywords = targetSignals.filter(
+        (signal) => scoreEntryAgainstKeywords(projectText, [signal]) >= 0.5
+      );
+      return {
+        project,
+        matchedKeywords,
+        score: scoreEntryAgainstKeywords(projectText, targetSignals)
+      };
+    })
+    .sort((left, right) => right.score - left.score)
+    .slice(0, limit);
+}
+
+function buildResumeEditGuideFallback(input: {
+  candidateProfile: CandidateProfile;
+  jobProfile: JobProfile;
+  matchReport: MatchReport;
+}) {
+  const relevantExperience = rankExperienceEntries(
+    input.candidateProfile,
+    input.jobProfile,
+    input.matchReport.priorityKeywords
+  );
+  const relevantProjects = rankProjectEntries(
+    input.candidateProfile,
+    input.jobProfile,
+    input.matchReport.priorityKeywords
+  );
+  const education = input.candidateProfile.education[0];
+  const keywordList = Array.from(
+    new Set(input.matchReport.priorityKeywords)
+  ).slice(0, 8);
+
+  return cleanText(
+    [
+      "Use this as an edit guide for your current resume. Keep the existing one-page structure and update only the sections below.",
+      "",
+      "Overall positioning:",
+      `- Target role: ${input.jobProfile.title} at ${input.jobProfile.company}.`,
+      `- Local grounded fit: ${input.matchReport.fitScore}/100.`,
+      ...input.matchReport.recommendedEmphasis
+        .slice(0, 3)
+        .map((item) => `- ${item}`),
+      "",
+      "Where to change:",
+      "1. Education / top-of-resume positioning",
+      education
+        ? `- Keep ${[education.school, education.degree, education.date]
+            .filter(Boolean)
+            .join(" | ")} visible near the top.`
+        : "- Keep your strongest education signal visible near the top.",
+      "- If coursework is already listed, move the most role-relevant items earlier instead of adding new ones.",
+      "",
+      "2. Skills section",
+      keywordList.length
+        ? `- Bring these already-supported keywords higher if they are genuinely covered elsewhere in the resume: ${keywordList.join(", ")}.`
+        : "- Bring the most role-relevant technical keywords higher in the skills section only when they are already supported.",
+      "- Remove weak filler before removing strong technical evidence.",
+      "",
+      ...relevantExperience.flatMap(({ entry, matchedKeywords }, index) => [
+        `${index + 3}. ${experienceHeader(entry)}`,
+        `- Keep: ${truncate(entry.bullets[0] ?? entry.title, 180)}.`,
+        matchedKeywords.length
+          ? `- Change: move the bullet(s) tied to ${matchedKeywords.slice(0, 3).join(", ")} higher in this role and tighten them for ATS scanning.`
+          : "- Change: make the first bullet in this role more directly relevant to the target job and cut lower-signal details.",
+        entry.bullets[1]
+          ? `- Candidate focus: ${truncate(entry.bullets[1], 180)}.`
+          : "- Candidate focus: keep the strongest quantified or systems-heavy bullet near the top."
+      ]),
+      ...relevantProjects.flatMap(({ project, matchedKeywords }, index) => [
+        `${relevantExperience.length + index + 3}. ${projectHeader(project)}`,
+        `- Keep: ${truncate(project.description[0] ?? project.name, 180)}.`,
+        matchedKeywords.length
+          ? `- Change: explicitly foreground the project parts connected to ${matchedKeywords.slice(0, 3).join(", ")}.`
+          : "- Change: only keep this project if it helps the target role more than another stronger section."
+      ]),
+      "",
+      "Keywords to weave in:",
+      ...(keywordList.length
+        ? keywordList.map((item) => `- ${item}`)
+        : ["- Use only keywords that are already supported by your resume evidence."]),
+      "",
+      "Gaps to address honestly:",
+      ...input.matchReport.gaps.slice(0, 3).map((item) => `- ${item}`),
+      "",
+      "Do not invent or overstate:",
+      "- Do not add tools, leadership claims, dates, metrics, or coursework unless they are already true and grounded in the resume.",
+      "- Do not replace strong quantified bullets with vague summaries."
+    ]
+      .filter(Boolean)
+      .join("\n")
+  );
+}
+
+function buildResumeEditGuidePrompt(input: {
+  candidateProfile: CandidateProfile;
+  jobProfile: JobProfile;
+  matchReport: MatchReport;
+  activeResumeText: string;
   truthEvidence: Awaited<ReturnType<typeof retrieveTruthEvidence>>;
   opportunityEvidence: Awaited<ReturnType<typeof retrieveOpportunityEvidence>>;
   instruction?: string;
-  priorDraft?: string;
 }) {
-  const originalLineCount = countNonEmptyLines(input.resumeText);
-  const minimumLineTarget = Math.max(12, Math.floor(originalLineCount * 0.8));
+  const relevantExperience = rankExperienceEntries(
+    input.candidateProfile,
+    input.jobProfile,
+    input.matchReport.priorityKeywords,
+    4
+  ).map(({ entry, matchedKeywords }) => ({
+    header: experienceHeader(entry),
+    bullets: entry.bullets.slice(0, 3),
+    matchedKeywords
+  }));
+  const relevantProjects = rankProjectEntries(
+    input.candidateProfile,
+    input.jobProfile,
+    input.matchReport.priorityKeywords,
+    2
+  ).map(({ project, matchedKeywords }) => ({
+    header: projectHeader(project),
+    bullets: project.description.slice(0, 2),
+    matchedKeywords
+  }));
 
   return [
     "You are MatchOptimizeAgent for CareerFlow AI.",
-    "Rewrite the resume into a full ATS-ready one-page resume using only grounded evidence.",
-    "This is a structure-preserving rewrite, not a summary.",
+    "Do not rewrite the entire resume.",
+    "Produce a targeted resume edit guide that tells the user exactly where to change their current resume for the selected role.",
     "Rules:",
-    "- Preserve the overall section coverage and density of the original resume unless the user explicitly asked to shorten it.",
-    `- Target at least ${minimumLineTarget} non-empty lines so the result stays comparable to the original one-page resume.`,
-    "- Keep Education, Experience, Projects, and Skills content when it is supported by evidence.",
-    "- Preserve a clear header for every internship, research role, or major position using company, title, and date whenever supported.",
-    "- Preserve multiple bullets for major roles and projects instead of collapsing everything into one short list.",
-    "- Improve phrasing, ordering, and keyword alignment, but do not invent tools, metrics, dates, awards, roles, or claims.",
-    "- Use job keywords only when they are already supported by the truth evidence.",
-    "- Return resume text only. No intro sentence, no explanation, no markdown fence, and no meta commentary.",
+    "- Use only grounded evidence from the resume truth store and the selected opportunity.",
+    "- Keep the user's existing one-page structure; do not produce a replacement resume.",
+    "- Reference specific existing sections or role headers when possible.",
+    "- For each recommended change, say what to edit, what to emphasize, and why it matters for the role.",
+    "- Only suggest keywords that are already supported by truth evidence. If a keyword is unsupported, say not to add it unless true.",
+    "- Keep the response concise, structured, and copy-editable.",
+    "- Return plain text only with these sections: Overall positioning, Where to change, Keywords to weave in, Gaps to address honestly, Do not invent.",
     "",
-    `Instruction: ${input.instruction ?? "Optimize my resume for this job while keeping the full one-page structure."}`,
+    `Instruction: ${input.instruction ?? "Tell me where to change this resume for the selected job."}`,
     "",
-    "Original resume text:",
-    input.resumeText,
+    "Current resume text:",
+    input.activeResumeText,
     "",
-    input.priorDraft ? "Compressed draft to improve:" : "",
-    input.priorDraft ?? "",
-    input.priorDraft ? "" : "",
     `Candidate profile: ${JSON.stringify(input.candidateProfile)}`,
     `Job profile: ${JSON.stringify(input.jobProfile)}`,
+    `Match report: ${JSON.stringify(input.matchReport)}`,
+    `Relevant experience blocks: ${JSON.stringify(relevantExperience)}`,
+    `Relevant projects: ${JSON.stringify(relevantProjects)}`,
     "",
     "Truth evidence:",
     ...input.truthEvidence.map((item) => `- ${item.title}: ${item.text}`),
@@ -310,32 +325,6 @@ export async function runMatchOptimizeAgent(
   context.session.matchReport = localMatch;
   appendMatchReportSnapshot(context.session, localMatch);
 
-  const resumeOptimizer = new ResumeOptimizerProMcpClient();
-  let mcpScore: number | undefined;
-  let mcpSummary: string | undefined;
-  let mcpMissingKeywords: string[] = [];
-
-  if (resumeOptimizer.isConfigured()) {
-    try {
-      const scored = await resumeOptimizer.scoreResumeAgainstJob({
-        resumeText: activeResume.content,
-        jobText: selectedOpportunity.content,
-        candidateProfile,
-        jobProfile
-      });
-      mcpScore = scored.score;
-      mcpSummary = scored.summary;
-      mcpMissingKeywords = scored.missingKeywords;
-    } catch (error) {
-      context.session.notes = [
-        ...context.session.notes,
-        error instanceof Error
-          ? `Resume Optimizer Pro scoring fallback: ${error.message}`
-          : "Resume Optimizer Pro scoring fallback triggered."
-      ].slice(-6);
-    }
-  }
-
   const matchArtifact = await buildArtifact({
     type: "match_report",
     title: "Match Report",
@@ -344,10 +333,7 @@ export async function runMatchOptimizeAgent(
       strengths: localMatch.strengths,
       gaps: localMatch.gaps,
       recommendedEmphasis: localMatch.recommendedEmphasis,
-      priorityKeywords: localMatch.priorityKeywords,
-      mcpScore,
-      mcpSummary,
-      missingKeywords: mcpMissingKeywords
+      priorityKeywords: localMatch.priorityKeywords
     }),
     editable: false,
     chunks: context.chunks,
@@ -358,42 +344,10 @@ export async function runMatchOptimizeAgent(
   const artifacts: DraftArtifact[] = [matchArtifact];
   const summaryParts = [
     `Your local grounded fit is ${localMatch.fitScore}/100.`,
-    mcpScore !== undefined
-      ? `Resume Optimizer Pro MCP returned ${mcpScore}/100.`
-      : "",
     localMatch.gaps[0] ? `Biggest grounded gap: ${localMatch.gaps[0]}` : ""
   ].filter(Boolean);
 
   if (mode === "optimize") {
-    let optimizedResume = "";
-    let optimizerLabel = "original resume preserved";
-
-    if (resumeOptimizer.isConfigured()) {
-      try {
-        const optimized = await resumeOptimizer.optimizeResume({
-          resumeText: activeResume.content,
-          jobText: selectedOpportunity.content,
-          candidateProfile,
-          jobProfile,
-          options: {
-            target: jobProfile.title,
-            tone: options?.instruction
-          }
-        });
-        if (optimized.optimizedResume.trim()) {
-          optimizedResume = cleanResumeArtifacts(optimized.optimizedResume);
-          optimizerLabel = "Resume Optimizer Pro MCP";
-        }
-      } catch (error) {
-        context.session.notes = [
-          ...context.session.notes,
-          error instanceof Error
-            ? `Resume Optimizer Pro optimization fallback: ${error.message}`
-            : "Resume Optimizer Pro optimization fallback triggered."
-        ].slice(-6);
-      }
-    }
-
     const truthEvidence = await retrieveTruthEvidence(
       options?.instruction ?? jobProfile.title,
       context.chunks,
@@ -407,52 +361,47 @@ export async function runMatchOptimizeAgent(
       6
     );
 
-    const needsStructurePreservingRewrite = isOverCompressedResume(
-      activeResume.content,
-      optimizedResume
-    );
-
-    if (needsStructurePreservingRewrite) {
-      const prompt = buildStructurePreservingOptimizationPrompt({
-        resumeText: activeResume.content,
+    const generated = await generateText(
+      buildResumeEditGuidePrompt({
         candidateProfile,
         jobProfile,
+        matchReport: localMatch,
+        activeResumeText: activeResume.content,
         truthEvidence,
         opportunityEvidence,
-        instruction: options?.instruction,
-        priorDraft: optimizedResume.trim() ? optimizedResume : undefined
+        instruction: options?.instruction
+      }),
+      () =>
+        buildResumeEditGuideFallback({
+          candidateProfile,
+          jobProfile,
+          matchReport: localMatch
+        })
+    );
+
+    const editGuide =
+      cleanText(generated.text) ||
+      buildResumeEditGuideFallback({
+        candidateProfile,
+        jobProfile,
+        matchReport: localMatch
       });
-      const generated = await generateText(prompt, () => buildLocalOptimizationFallback(context));
-      optimizedResume = cleanResumeArtifacts(generated.text);
-      optimizerLabel =
-        generated.usedModel
-          ? optimizedResume.trim() && resumeOptimizer.isConfigured()
-            ? "Featherless structure-preserving rewrite"
-            : "Featherless structure-preserving rewrite"
-          : "original resume preserved";
-    }
 
-    if (
-      isOverCompressedResume(activeResume.content, optimizedResume) ||
-      !hasExpectedRoleCoverage(candidateProfile, optimizedResume)
-    ) {
-      optimizedResume = buildLocalOptimizationFallback(context);
-      optimizerLabel = "original resume preserved";
-    }
+    context.session.artifacts = context.session.artifacts.filter(
+      (artifact) => artifact.type !== "optimized_resume"
+    );
 
-    const optimizedArtifact = await buildArtifact({
-      type: "optimized_resume",
-      title: "Optimized Resume",
-      content: optimizedResume,
+    const guidanceArtifact = await buildArtifact({
+      type: "resume_edit_guide",
+      title: "Resume Edit Guide",
+      content: editGuide,
       chunks: context.chunks,
       session: context.session
     });
-    upsertArtifact(context.session.artifacts, optimizedArtifact);
-    artifacts.push(optimizedArtifact);
+    upsertArtifact(context.session.artifacts, guidanceArtifact);
+    artifacts.push(guidanceArtifact);
     summaryParts.push(
-      optimizerLabel === "original resume preserved"
-        ? "I preserved your original resume structure because a reliable full-length rewrite was not available."
-        : `I created an optimized resume using ${optimizerLabel}.`
+      "I created a section-by-section resume edit guide based on your current resume and the selected role, instead of rewriting the whole resume."
     );
   }
 
@@ -460,16 +409,15 @@ export async function runMatchOptimizeAgent(
     makeTraceStep(
       "MatchOptimizeAgent",
       mode === "optimize"
-        ? "Compared the active resume to the selected opportunity and generated an optimized resume."
+        ? "Compared the active resume to the selected opportunity and produced targeted resume edit guidance."
         : "Compared the active resume to the selected opportunity and produced a grounded match report.",
       "completed",
       artifacts.map((artifact) => artifact.id),
       [
         "ensureParsedSessionState",
         "compareCandidateToJob",
-        "ResumeOptimizerProMcp.scoreResumeAgainstJob",
         ...(mode === "optimize"
-          ? ["ResumeOptimizerProMcp.optimizeResume", "generateText"]
+          ? ["retrieveTruthEvidence", "retrieveOpportunityEvidence", "generateText"]
           : []),
         "buildArtifact"
       ]

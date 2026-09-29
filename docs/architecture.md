@@ -1,70 +1,112 @@
 # Architecture
 
-CareerFlow is organized around one principle: **separate orchestration from evidence and external tools**.
+CareerFlow is organized around one rule: **keep orchestration, evidence, storage, and external tools separate**.
 
-## Request lifecycle
+## Request path
 
-1. The user interacts with the Next.js workspace.
-2. `OrchestratorAgent` resolves one or more intents.
-3. Worker agents execute domain-specific steps.
-4. Retrieval supplies evidence from the correct corpus.
-5. Optional MCP adapters call external tools.
-6. Results are written back to the persistent session as messages, artifacts, saved jobs, or workflow trace entries.
+```mermaid
+flowchart LR
+    UI[Next.js workspace] --> API[API routes]
+    API --> O[OrchestratorAgent]
+    O --> P[Parse / Ingest]
+    O --> J[Job Search]
+    O --> M[Match + Resume Optimization]
+    O --> E[Email / Outreach]
 
-## Agent responsibilities
+    P --> S[(Session Store)]
+    J --> S
+    M --> S
+    E --> S
 
-### OrchestratorAgent
+    S --> R[Grounded Retrieval]
+    R --> O
 
-Single entry point for chat and action requests. It resolves explicit actions or inferred intents and delegates work to the appropriate worker.
+    J --> JMCP[Job-search MCP]
+    M --> RMCP[Resume tools / export]
+    P --> WMCP[Web extraction]
+```
 
-### ParseIngestAgent
+## Canonical agent layer
 
-Parses resumes, job descriptions, pasted text, and supported source inputs. It rebuilds source indexes and candidate/opportunity state as needed.
+The application now uses one orchestration path rather than maintaining parallel legacy supervisors.
 
-### JobSearchAgent
+- `orchestrator.ts` — intent routing and multi-step execution
+- `parse-ingest.ts` — source ingestion and profile parsing
+- `job-search.ts` — search, normalization, and saved opportunities
+- `match-optimize.ts` — grounded fit analysis and resume guidance
+- `email-connect.ts` — email, connection-message, and cover-letter drafting
+- `shared.ts` — common context, artifacts, and workflow-trace helpers
+- `crewai-bridge.ts` — optional planner bridge
 
-Builds search queries, calls a configured job-search adapter when available, normalizes results, and saves selected jobs into the opportunity corpus.
+Older supervisor/match/planner variants were removed so each responsibility has one implementation.
 
-### MatchOptimizeAgent
+## Evidence model
 
-Compares the candidate profile with the selected opportunity and produces grounded match analysis and resume-edit guidance.
+CareerFlow separates two corpora:
 
-### EmailConnectAgent
+### Truth corpus
 
-Drafts recruiter email, connection messages, and cover letters from retrieved candidate and opportunity evidence.
+Candidate-owned facts:
 
-## Evidence boundaries
+- resume;
+- supporting candidate documents;
+- user notes.
 
-CareerFlow intentionally separates:
+### Opportunity corpus
 
-- **truth evidence**: facts about the candidate;
-- **opportunity evidence**: facts about the role or company.
+External role facts:
 
-Retrieval functions query these domains independently. This makes provenance easier to inspect and reduces accidental cross-contamination of claims.
+- job descriptions;
+- saved job listings;
+- company / role pages.
+
+`lib/tools/retrieval.ts` is the single retrieval implementation. It can combine lexical scoring with optional embeddings while preserving source metadata.
+
+This boundary prevents a job requirement from silently becoming a candidate claim.
+
+## API surface
+
+The public application path is intentionally small:
+
+- `POST /api/ingest`
+- `POST /api/chat`
+- `POST /api/actions/run`
+- `POST /api/jobs/search`
+- `POST /api/jobs/save`
+- `POST /api/sources/add`
+- `POST /api/sources/update`
+- `POST /api/sources/remove`
+- `POST /api/sources/replace-resume`
+- `POST /api/export`
+- `POST /api/save-session`
+- `GET /api/session/[id]`
+- `PATCH /api/session/[id]`
+- `DELETE /api/session/[id]`
+- `GET /api/sessions`
+
+Specialized legacy wrappers were removed in favor of `/api/actions/run`, which passes an explicit action to the orchestrator.
 
 ## Storage
 
-The default implementation is local and session-oriented. Each session can persist:
+Each session can persist:
 
 - source manifest;
 - active resume;
 - saved opportunity sources;
 - parsed candidate profile;
 - selected opportunity profile;
-- job search results;
+- search results;
 - match reports;
-- chat history;
+- messages;
 - artifacts;
 - workflow trace.
 
-The storage interface is abstracted so another persistence backend can be added without changing agent logic.
+The storage interface remains abstract so the local JSON backend can be swapped without changing agent logic.
 
 ## MCP boundary
 
-External services are accessed through typed adapters under `lib/mcp/`. The application does not assume those services are present. Each adapter reports configuration status and can fail independently, allowing the core workflow to fall back when possible.
+External services are isolated under `lib/mcp/`. Core workflows do not assume that every MCP service is available. Adapters expose configuration checks and allow local/manual fallback where the application supports it.
 
 ## Optional planner
 
-The CrewAI bridge is a separate Python service. When enabled, it can propose a plan for compound requests. The Next.js application remains the execution host and system of record.
-
-This separation keeps the primary path deterministic enough for local use while leaving room for more autonomous planning experiments.
+The CrewAI bridge is separate from the default orchestration path. When enabled, it can suggest intent sequences; the Next.js application remains the execution host and system of record.
