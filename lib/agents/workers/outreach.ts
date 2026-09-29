@@ -12,7 +12,7 @@ import {
   getSelectedOpportunitySource
 } from "@/lib/tools/session-state";
 
-import { ensureParsedSessionState } from "./parse-ingest";
+import { ensureParsedSessionState } from "./source-ingest";
 
 function emailFallback(
   context: AgentContext,

@@ -6,7 +6,7 @@ import type { JobSpySearchFilters } from "@/lib/mcp/jobspy/types";
 import type { DraftArtifact, JobSearchResult, SessionRecord } from "@/lib/schemas";
 import { getStorage } from "@/lib/storage";
 import { makeId } from "@/lib/utils";
-import { saveJobResultAsOpportunity } from "@/lib/agents/parse-ingest";
+import { saveJobResultAsOpportunity } from "@/lib/agents/workers/source-ingest";
 import { setSavedJobSearchResults } from "@/lib/tools/session-state";
 
 function toJobSearchResult(input: {

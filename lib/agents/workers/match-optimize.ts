@@ -22,7 +22,7 @@ import {
 } from "@/lib/tools/session-state";
 import { tokenize, truncate } from "@/lib/utils";
 
-import { ensureParsedSessionState } from "./parse-ingest";
+import { ensureParsedSessionState } from "./source-ingest";
 
 function buildMatchArtifactContent(input: {
   localScore: number;
