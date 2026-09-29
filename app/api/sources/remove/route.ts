@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { removeSourceFromSession } from "@/lib/agents/parse-ingest";
+import { removeSourceFromSession } from "@/lib/agents/workers/source-ingest";
 
 export async function POST(request: Request) {
   try {

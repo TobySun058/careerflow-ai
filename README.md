@@ -155,7 +155,10 @@ components/
   workspace/           workspace shell
 
 lib/
-  agents/              orchestration and worker agents
+  agents/
+    orchestrator.ts    central intent routing and workflow execution
+    workers/           ingest, job search, matching, and outreach agents
+    integrations/      optional external planner adapters
   mcp/                 MCP client/adapters
   providers/           provider abstraction boundaries
   schemas/             typed application models

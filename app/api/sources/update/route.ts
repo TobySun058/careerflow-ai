@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { updateSourceInSession } from "@/lib/agents/parse-ingest";
+import { updateSourceInSession } from "@/lib/agents/workers/source-ingest";
 import { toPublicErrorMessage } from "@/lib/utils/public-error";
 
 export async function POST(request: Request) {
