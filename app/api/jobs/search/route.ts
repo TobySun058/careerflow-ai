@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { buildAgentContext } from "@/lib/agents/shared";
-import { deriveSearchQuery, searchJobs } from "@/lib/agents/job-search";
+import { deriveSearchQuery, searchJobs } from "@/lib/agents/workers/job-search";
 import { getStorage } from "@/lib/storage";
 
 export async function POST(request: Request) {

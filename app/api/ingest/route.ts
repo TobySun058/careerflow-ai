@@ -4,7 +4,7 @@ import { buildAgentContext } from "@/lib/agents/shared";
 import {
   ensureParsedSessionState,
   resolveUrlThroughDecodo
-} from "@/lib/agents/parse-ingest";
+} from "@/lib/agents/workers/source-ingest";
 import { getStorage } from "@/lib/storage";
 import { fetchAndCleanJobUrl } from "@/lib/tools/fetch-job-url";
 import { extractTextFromUpload } from "@/lib/tools/parse-resume";

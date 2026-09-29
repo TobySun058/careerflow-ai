@@ -20,11 +20,11 @@ import {
 } from "@/lib/tools/session-state";
 import { buildAgentContext, makeTraceStep } from "@/lib/agents/shared";
 
-import { requestCrewAiPlan } from "./crewai-bridge";
-import { runEmailConnectAgent } from "./email-connect";
-import { deriveSearchQuery, saveSelectedJobToSession, searchJobs } from "./job-search";
-import { runMatchOptimizeAgent } from "./match-optimize";
-import { ensureParsedSessionState } from "./parse-ingest";
+import { requestCrewAiPlan } from "./integrations/crewai-planner";
+import { runEmailConnectAgent } from "./workers/outreach";
+import { deriveSearchQuery, saveSelectedJobToSession, searchJobs } from "./workers/job-search";
+import { runMatchOptimizeAgent } from "./workers/match-optimize";
+import { ensureParsedSessionState } from "./workers/source-ingest";
 
 type OrchestratorIntent =
   | "parse_sources"

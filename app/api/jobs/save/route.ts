@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { saveSelectedJobToSession } from "@/lib/agents/job-search";
+import { saveSelectedJobToSession } from "@/lib/agents/workers/job-search";
 
 export async function POST(request: Request) {
   try {
