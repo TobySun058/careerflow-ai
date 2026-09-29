@@ -1,261 +1,205 @@
 # CareerFlow AI
 
-CareerFlow AI is a local-first, NotebookLM-style career workspace for grounded resume and job-search workflows. The product is built with Next.js App Router, TypeScript, Tailwind CSS, and a small MCP adapter layer for the external tools that actually matter in the current stack.
+A grounded, local-first AI workspace for **job search, resume targeting, and career outreach**.
 
-The interface is intentionally stable:
+CareerFlow turns a resume, supporting documents, and job opportunities into a persistent workspace where users can search roles, compare fit, generate evidence-backed resume guidance, and draft outreach without mixing candidate facts with job-description claims.
 
-- left rail: sources and saved sessions
-- center rail: persistent grounded chat
-- right rail: actions, workflow trace, and latest outputs
+## Highlights
 
-The current backend is intentionally simpler than the earlier hackathon versions:
+- **Grounded career assistant** with separate candidate and opportunity corpora
+- **Multi-step orchestration** for ingest, search, matching, resume guidance, and outreach
+- **MCP integrations** for job search, resume export, and web extraction
+- **Persistent sessions** with sources, chat history, artifacts, saved jobs, and workflow traces
+- **Local-first storage** with optional provider adapters
+- **Graceful fallbacks** so core workflows remain usable when optional MCP services are unavailable
 
-- `OrchestratorAgent` is the single entry point for chat and action buttons
-- `ParseIngestAgent` manages source ingestion, parsing, and index rebuilds
-- `JobSearchAgent` handles job search plus selective job saving
-- `MatchOptimizeAgent` generates match reports and section-by-section resume edit guidance
-- `EmailConnectAgent` drafts grounded outreach, connection notes, and cover letters
+## Architecture
 
-An optional CrewAI bridge can still be enabled for more autonomous planning, but the Next.js backend remains the execution host and system of record.
+```mermaid
+flowchart LR
+    U[User] --> UI[Next.js Workspace]
+    UI --> O[Orchestrator Agent]
 
-## What it does
+    O --> P[Parse / Ingest]
+    O --> J[Job Search]
+    O --> M[Match + Resume Guidance]
+    O --> E[Email / Outreach]
 
-- Upload a resume and supporting files
-- Paste raw text or add a URL source
-- Replace the active resume or remove sources from a session
-- Keep user facts and opportunity facts isolated with dual corpora
-- Search jobs, review multiple results, and selectively save jobs into the opportunity corpus
-- Analyze match, generate resume edit guidance, and draft grounded outreach
-- Export a PDF resume through Resumake MCP when configured
-- Persist chat history, artifacts, workflow trace, sources, saved jobs, and parsed state per session
+    P --> S[(Session + Source Store)]
+    J --> S
+    M --> S
+    E --> S
 
-## Stack
+    J --> JMCP[Job Search MCP]
+    M --> RMCP[Resume Export MCP]
+    P --> WMCP[Web Extraction MCP]
 
-- Next.js App Router
-- TypeScript
-- Tailwind CSS
-- Local-first JSON storage
-- Featherless OpenAI-compatible API for open-source model inference
-- MCP-first adapters for Resumake, JobSpy, and Decodo
+    S --> R[Grounded Retrieval]
+    R --> O
+```
 
-## Getting started
+The application keeps **candidate facts** and **opportunity facts** separate. Candidate claims are grounded in resume/supporting sources; role and company claims are grounded in saved opportunity sources.
 
-1. Install dependencies
+For a deeper walkthrough, see [docs/architecture.md](docs/architecture.md).
+
+## Core workflow
+
+1. Upload or paste a resume and supporting material.
+2. Parse the candidate profile and build a local source index.
+3. Search for jobs or add a job description manually.
+4. Save an opportunity into the session.
+5. Run match analysis and generate resume improvement guidance.
+6. Draft recruiter outreach, connection notes, or cover letters from grounded evidence.
+7. Export a resume through an optional MCP adapter.
+
+## Tech stack
+
+- **Frontend / API:** Next.js 15, React 19, TypeScript
+- **UI:** Tailwind CSS
+- **Validation:** Zod
+- **Storage:** local JSON by default, Firebase adapter boundary
+- **Retrieval:** chunked source indexing with lexical fallback and optional embeddings
+- **Model backend:** OpenAI-compatible inference API
+- **Tool integration:** Model Context Protocol (MCP)
+- **Optional planner:** CrewAI sidecar
+
+## Quick start
+
+### 1. Install
 
 ```bash
 npm install
 ```
 
-2. Copy the environment file
+### 2. Configure
 
 ```bash
 cp .env.example .env
 ```
 
-3. Minimum local setup
+Minimum configuration:
 
 ```env
 FEATHERLESS_API_KEY=your_key_here
 ```
 
-4. Optional MCP setup
+The default model/backend values in `.env.example` can be changed to another compatible endpoint.
 
-```env
-MCP_TRANSPORT=http-json
-ENABLE_RESUMAKE_MCP=true
-RESUMAKE_MCP_COMMAND=node
-RESUMAKE_MCP_ARGS=["path/to/resumake-mcp/server.js"]
-RESUMAKE_MCP_CWD=path/to/resumake-mcp
-ENABLE_JOBSPY_MCP=true
-JOBSPY_MCP_COMMAND=node
-JOBSPY_MCP_ARGS=["path/to/jobspy-mcp-server/src/index.js"]
-JOBSPY_MCP_CWD=path/to/jobspy-mcp-server
-ENABLE_DECODO_MCP=true
-DECODO_API_KEY=your_key_here
-DECODO_MCP_URL=https://your-decodo-mcp-endpoint
-```
-
-Notes:
-
-- `Resumake MCP` is used for final PDF resume generation/export.
-- `JobSpy MCP` is used for job search.
-- `Decodo MCP` is used for URL extraction and enrichment.
-- Resume parsing and match guidance stay local and grounded even when MCPs are disabled.
-
-5. Start the app
+### 3. Run
 
 ```bash
 npm run dev
 ```
 
-6. Open `http://localhost:3000`
+Open `http://localhost:3000`.
 
-## Scripts
+### 4. Try the sample workflow
 
-- `npm run dev`
-- `npm run build`
-- `npm run start`
-- `npm run typecheck`
+Use **Load demo data** on the home page, then:
 
-## Storage modes
+- review the seeded sources,
+- search or select a role,
+- save the opportunity,
+- run match analysis,
+- generate resume guidance or outreach.
 
-### Local
+## MCP integrations
 
-Default mode. Sessions, source manifests, and chunk indexes are stored in:
+MCP services are **optional external dependencies** and are not vendored into this repository.
 
-- `data/local/sessions`
-- `data/local/sources`
-- `data/local/indexes`
+Supported adapter boundaries include:
 
-### Firebase
+| Integration | Purpose |
+| --- | --- |
+| Job search MCP | Search and normalize job listings |
+| Resume export MCP | Render a final resume artifact |
+| Web extraction MCP | Extract structured content from URLs |
 
-An adapter boundary is included, but the MVP defaults to local mode unless you extend the Firebase adapter with credentials and persistence logic.
+Configure them through `.env`. If an adapter is disabled or unavailable, CareerFlow falls back to local/manual behavior where supported.
 
-## Environment variables
+Example:
 
-See `.env.example` for the full list.
+```env
+ENABLE_JOBSPY_MCP=false
+ENABLE_RESUMAKE_MCP=false
+ENABLE_DECODO_MCP=false
+```
 
-Important flags:
+## Grounding design
 
-- `MCP_TRANSPORT`
-- `FEATHERLESS_API_KEY`
-- `FEATHERLESS_BASE_URL`
-- `FEATHERLESS_MODEL`
-- `FEATHERLESS_EMBED_MODEL`
-- `ENABLE_RESUMAKE_MCP`
-- `RESUMAKE_MCP_COMMAND`
-- `RESUMAKE_MCP_ARGS`
-- `RESUMAKE_MCP_CWD`
-- `RESUMAKE_TEMPLATE_NUMBER`
-- `ENABLE_JOBSPY_MCP`
-- `JOBSPY_MCP_COMMAND`
-- `JOBSPY_MCP_ARGS`
-- `JOBSPY_MCP_CWD`
-- `JOBSPY_SITE_NAMES`
-- `JOBSPY_COUNTRY_INDEED`
-- `JOBSPY_FETCH_LINKEDIN_DESCRIPTION`
-- `ENABLE_DECODO_MCP`
-- `DECODO_API_KEY`
-- `DECODO_MCP_URL`
-- `ENABLE_CREWAI_BRIDGE`
-- `CREWAI_BRIDGE_URL`
-- `CREWAI_BRIDGE_TIMEOUT_MS`
-- `APP_URL`
-- `STORAGE_MODE`
-- `LOCAL_DATA_DIR`
-- `ENABLE_EMBEDDINGS`
+CareerFlow maintains two evidence domains:
 
-## Architecture
+**Truth corpus**
+- active resume
+- supporting candidate documents
+- candidate-provided notes
 
-### Agents
+**Opportunity corpus**
+- job descriptions
+- saved job listings
+- company / role pages
 
-- `OrchestratorAgent`
-- `ParseIngestAgent`
-- `JobSearchAgent`
-- `MatchOptimizeAgent`
-- `EmailConnectAgent`
+The retrieval layer preserves source metadata, and generated claims are expected to stay within the appropriate evidence domain. This prevents, for example, a requirement from a job description from being accidentally represented as a candidate skill.
 
-Flow:
+## Main components
 
-- chat or action -> `OrchestratorAgent`
-- orchestrator -> one or more of parse/ingest, job search, match/optimize, email/connect
-- worker agent -> local grounded logic plus MCP adapter calls where they actually help
-- outputs -> session state, artifacts, workflow trace, grounded chat response
+```text
+app/
+  api/                 Next.js API routes
+  workspace/           primary application workspace
 
-### MCP adapters
+components/
+  chat/                grounded chat UI
+  sources/             source management
+  actions/             workflow actions and trace
+  workspace/           workspace shell
 
-- `Resumake MCP`
-  - preferred for final resume PDF generation and template-based export
-- `JobSpy MCP`
-  - preferred for job search across Indeed, LinkedIn, Glassdoor, and related sources
-- `Decodo MCP`
-  - preferred for URL extraction and page enrichment
+lib/
+  agents/              orchestration and worker agents
+  mcp/                 MCP client/adapters
+  providers/           provider abstraction boundaries
+  schemas/             typed application models
+  storage/             local/Firebase storage interfaces
+  tools/               parsing, retrieval, matching, export
 
-All MCP integration logic is centralized under `lib/mcp/*`. The app backend acts as the orchestration host and falls back gracefully when an MCP is unavailable.
+crewai_bridge/          optional Python planner sidecar
+data/sample/            demo seed data
+docs/                   architecture notes
+```
 
-Legacy hackathon-era agents and provider shims are not part of the live notebook flow anymore. The active path is the five-agent stack described above plus the MCP adapters in `lib/mcp/*`.
+## API surface
 
-### Optional CrewAI planning bridge
-
-If you want more autonomous multi-agent routing, enable the Python CrewAI sidecar in [`crewai_bridge/README.md`](./crewai_bridge/README.md).
-
-Recommended shape:
-
-- Next.js remains the system of record for sessions, storage, retrieval, MCP adapters, and artifact persistence
-- CrewAI acts as a planner for ambiguous or compound chat requests
-- the Node orchestrator executes the returned plan with the existing worker agents
-
-This keeps the current frontend and backend execution stable, while adding real multi-agent collaboration where it helps most.
-
-### Grounding model
-
-- Truth corpus: active resume, supporting user documents, pasted notes about the user
-- Opportunity corpus: job descriptions, saved job listings, company pages, and URL-derived opportunity content
-
-Rules:
-
-- user facts come from truth sources only
-- role and company facts come from opportunity sources only
-- unsupported claims are downgraded or filtered by the claim checker
-
-### Retrieval
-
-- chunking with metadata
-- embeddings when a Featherless-compatible embedding model is configured
-- lexical fallback when embeddings are unavailable
-- top-k evidence retrieval with source references
-
-### Session model
-
-Each local session stores:
-
-- `sources[]`
-- `activeResumeSourceId`
-- `savedOpportunitySourceIds[]`
-- `chatHistory[]`
-- `parsedResumeProfile`
-- `savedJobSearchResults[]`
-- `selectedOpportunityProfile`
-- `matchReport` and `matchReports[]`
-- `artifacts[]`
-- `workflowTrace[]`
-- timestamps and notes
-
-## API routes
+Primary routes include:
 
 - `POST /api/ingest`
 - `POST /api/chat`
-- `POST /api/actions/run`
-- `POST /api/sources/add`
-- `POST /api/sources/replace-resume`
-- `POST /api/sources/remove`
 - `POST /api/jobs/search`
 - `POST /api/jobs/save`
 - `POST /api/match/run`
 - `POST /api/email/run`
 - `POST /api/export`
-- `POST /api/save-session`
+- `POST /api/sources/add`
+- `POST /api/sources/replace-resume`
+- `POST /api/sources/remove`
 - `GET /api/session/[id]`
 - `GET /api/sessions`
 
-Compatibility routes:
+## Development
 
-- `POST /api/follow-up`
-- `POST /api/job-search`
-- `POST /api/run-workflow`
+```bash
+npm run typecheck
+npm run build
+```
 
-## Demo data
+A GitHub Actions workflow runs TypeScript checks on pushes and pull requests.
 
-Sample seed content lives in `data/sample/demo.json`.
+## Project status
 
-Use the "Load demo data" button on the home page for a quick end-to-end demo.
+CareerFlow began as a hackathon project and has since been reworked into a cleaner portfolio implementation with a simpler orchestration path, grounded retrieval, persistent sessions, and explicit MCP adapter boundaries.
 
-## Notes
+Current limitations:
 
-- The app is still useful when optional adapters are disabled.
-- Featherless powers open-ended grounded generation and local fallback prompts.
-- Job search falls back to seeded manual job results when JobSpy MCP is unavailable.
-- Resume parsing, match analysis, and resume edit guidance use local grounded logic.
-- Resumake MCP is only used where it fits well: final resume rendering/export.
-- URL extraction falls back to direct fetch-and-clean when Decodo MCP is unavailable.
-- The main demo path is: create or load a session, review sources in the left rail, chat in the center, search and save a job, then run match, optimize, or email actions from the right rail.
+- local JSON is the default persistence mode;
+- external job-search quality depends on the configured provider;
+- autonomous planning through CrewAI is optional rather than required;
+- this repository focuses on a reproducible local workflow rather than production-scale authentication or multi-tenant deployment.
