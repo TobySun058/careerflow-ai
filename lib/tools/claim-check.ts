@@ -7,7 +7,7 @@ import type {
 } from "@/lib/schemas";
 import { makeId, splitIntoSentences } from "@/lib/utils";
 
-import { retrieveEvidence } from "./retrieve";
+import { retrieveEvidence } from "./retrieval";
 
 function splitIntoClaimUnits(content: string) {
   const lineBased = content
