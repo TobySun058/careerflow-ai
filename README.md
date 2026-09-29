@@ -4,6 +4,12 @@ A grounded, local-first AI workspace for **job search, resume targeting, and car
 
 CareerFlow turns a resume, supporting documents, and job opportunities into a persistent workspace where users can search roles, compare fit, generate evidence-backed resume guidance, and draft outreach without mixing candidate facts with job-description claims.
 
+## Demo
+
+![CareerFlow demo](assets/careerflow-demo.gif)
+
+The animation walks through the bundled sample flow: ingest candidate/opportunity sources, open the grounded workspace, run match analysis, and draft evidence-backed outreach.
+
 ## Highlights
 
 - **Grounded career assistant** with separate candidate and opportunity corpora
