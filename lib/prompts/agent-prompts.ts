@@ -1,5 +1,5 @@
 import type { CandidateProfile, JobProfile } from "@/lib/schemas";
-import type { RetrievedEvidence } from "@/lib/tools/retrieve";
+import type { RetrievedEvidence } from "@/lib/tools/retrieval";
 
 function formatEvidence(evidence: RetrievedEvidence[]) {
   return evidence
